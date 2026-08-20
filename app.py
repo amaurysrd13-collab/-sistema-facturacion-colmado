@@ -375,13 +375,23 @@ def logout():
 def productos():
   lista = Producto.query.filter_by(colmado_id=current_user.colmado_id).all()
   es_dueno = current_user.rol == "dueno"
-  filas = "".join(
-      f"""<tr>
+  def fila_producto(p):
+    acciones = ""
+    if es_dueno:
+      url_editar = url_for("editar_producto", producto_id=p.id)
+      url_eliminar = url_for("eliminar_producto", producto_id=p.id)
+      confirmacion = f"¿Eliminar {p.nombre}?"
+      acciones = (
+          f'<a class="btn-link" href="{url_editar}">Editar</a> · '
+          f'<a class="btn-link" href="{url_eliminar}" '
+          f'onclick="return confirm(\'{confirmacion}\')">Eliminar</a>'
+      )
+    return f"""<tr>
                 <td>{p.nombre}</td><td>RD$ {p.precio:.2f}</td><td>{p.cantidad}</td>
-                <td>{f'<a class="btn-link" href="{url_for("editar_producto", producto_id=p.id)}">Editar</a> · <a class="btn-link" href="{url_for("eliminar_producto", producto_id=p.id)}" onclick="return confirm(\'¿Eliminar {p.nombre}?\')">Eliminar</a>' if es_dueno else ''}</td>
+                <td>{acciones}</td>
             </tr>"""
-      for p in lista
-  ) or "<tr><td colspan='4'>Aún no tienes productos registrados.</td></tr>"
+
+  filas = "".join(fila_producto(p) for p in lista) or "<tr><td colspan='4'>Aún no tienes productos registrados.</td></tr>"
 
   cuerpo = f"""
         <h2>📦 Productos</h2>

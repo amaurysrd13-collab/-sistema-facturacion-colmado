@@ -1,8 +1,19 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
-from datetime import datetime
+from datetime import datetime, timedelta
 
 db = SQLAlchemy()
+
+
+class Plan(db.Model):
+    """Planes de membresía que el superadmin puede crear y asignar a un colmado."""
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(50), nullable=False)          # ej. "Básico", "Pro"
+    precio = db.Column(db.Float, nullable=False)
+    duracion_dias = db.Column(db.Integer, nullable=False, default=30)
+    activo = db.Column(db.Boolean, default=True)                # si el plan sigue disponible para asignar
+
+    colmados = db.relationship('Colmado', backref='plan', lazy=True)
 
 
 class Colmado(db.Model):
@@ -11,27 +22,68 @@ class Colmado(db.Model):
     nombre = db.Column(db.String(100), nullable=False)
     fecha_registro = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Plan asignado
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=True)
+
     # Control de membresía (esto lo maneja el creador del sistema)
     membresia_activa = db.Column(db.Boolean, default=True)
     membresia_vence = db.Column(db.DateTime, nullable=False)
 
+    # Estado general del colmado, controlado por el superadmin
+    # Valores: 'activo', 'suspendido', 'eliminado'
+    estado = db.Column(db.String(20), nullable=False, default='activo')
+
+    # Configuración propia del colmado (moneda, logo, nombre del negocio en factura, etc.)
+    configuracion = db.Column(db.JSON, default=dict)
+
     # Relaciones
     usuarios = db.relationship('Usuario', backref='colmado', lazy=True)
 
+    @property
+    def dueno(self):
+        """El usuario con rol 'dueno' dentro de este colmado."""
+        return next((u for u in self.usuarios if u.rol == 'dueno'), None)
+
+    def renovar_membresia(self, dias=None):
+        """Extiende la fecha de vencimiento. Si no se pasan días, usa la duración del plan asignado."""
+        dias = dias or (self.plan.duracion_dias if self.plan else 30)
+        base = self.membresia_vence if self.membresia_vence and self.membresia_vence > datetime.utcnow() else datetime.utcnow()
+        self.membresia_vence = base + timedelta(days=dias)
+        self.membresia_activa = True
+
+    def suspender(self):
+        self.estado = 'suspendido'
+        self.membresia_activa = False
+
+    def activar(self):
+        self.estado = 'activo'
+        self.membresia_activa = True
+
+    def eliminar(self):
+        """Borrado lógico: no se elimina de la base de datos, solo se marca."""
+        self.estado = 'eliminado'
+        self.membresia_activa = False
+
 
 class Usuario(db.Model, UserMixin):
-    """Usuarios del sistema: dueño, cajero o empleado básico."""
+    """Usuarios del sistema: superadmin, dueño, cajero o empleado básico."""
     id = db.Column(db.Integer, primary_key=True)
-    colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=False)
+
+    # nullable=True porque el superadmin no pertenece a ningún colmado
+    colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=True)
 
     nombre = db.Column(db.String(100), nullable=False)
     usuario = db.Column(db.String(50), unique=True, nullable=False)
     clave_hash = db.Column(db.String(255), nullable=False)  # nunca guardamos la clave en texto plano
 
-    # Roles: 'dueno', 'cajero', 'empleado'
+    # Roles: 'superadmin', 'dueno', 'cajero', 'empleado'
     rol = db.Column(db.String(20), nullable=False, default='empleado')
 
     activo = db.Column(db.Boolean, default=True)
+
+    @property
+    def es_superadmin(self):
+        return self.rol == 'superadmin'
 
 
 class Producto(db.Model):

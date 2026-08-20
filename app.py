@@ -349,10 +349,35 @@ def dashboard():
       else:
         aviso_membresia = f'<p style="color:var(--gris); font-size:0.85rem;">Membresía activa hasta el {colmado.membresia_vence.strftime("%d/%m/%Y")} ({dias_restantes} días restantes)</p>'
 
+  # Aviso de productos con poca existencia (mismo umbral que en Reportes)
+  UMBRAL_BAJO_STOCK = 10
+  productos_bajo_stock = (
+      Producto.query.filter(
+          Producto.colmado_id == current_user.colmado_id,
+          Producto.cantidad < UMBRAL_BAJO_STOCK,
+      )
+      .order_by(Producto.cantidad.asc())
+      .all()
+  )
+
+  aviso_stock = ""
+  if productos_bajo_stock:
+    nombres_bajo_stock = ", ".join(
+        f"{p.nombre} ({p.cantidad})" for p in productos_bajo_stock[:5]
+    )
+    extra = f" y {len(productos_bajo_stock) - 5} más" if len(productos_bajo_stock) > 5 else ""
+    aviso_stock = f"""
+        <div class="flash flash-danger">
+            📉 Poca existencia: {nombres_bajo_stock}{extra}.
+            <a class="btn-link" href="{url_for('productos')}" style="margin-left:6px;">Ver productos →</a>
+        </div>
+    """
+
   cuerpo = f"""
         <h1>Hola, {current_user.nombre} 👋</h1>
         <p>Rol: <strong>{current_user.rol}</strong></p>
         {aviso_membresia}
+        {aviso_stock}
         <ul class="menu">
             {opciones_comunes}
             {opciones_dueno}

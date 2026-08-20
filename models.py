@@ -5,6 +5,19 @@ from datetime import datetime, timedelta
 db = SQLAlchemy()
 
 
+# --- PERMISOS DELEGABLES ---
+# Estos son los permisos que el DUEÑO puede activar/desactivar por empleado.
+# El dueño siempre tiene TODOS los permisos automáticamente (ver Usuario.tiene_permiso).
+# Agregar/eliminar empleados y configuración del colmado NUNCA son delegables:
+# esas rutas siguen protegidas solo para el rol 'dueno'.
+PERMISOS_DISPONIBLES = {
+    "productos": "Agregar, editar y eliminar productos (incluye cambiar precios)",
+    "reportes": "Ver reportes generales del negocio",
+    "ganancias": "Ver ganancias y totales del negocio",
+    "caja_completa": "Ver y hacer el cuadre completo de caja",
+}
+
+
 class Plan(db.Model):
     """Planes de membresía que el superadmin puede crear y asignar a un colmado."""
     id = db.Column(db.Integer, primary_key=True)
@@ -81,9 +94,22 @@ class Usuario(db.Model, UserMixin):
 
     activo = db.Column(db.Boolean, default=True)
 
+    # Permisos delegables que el dueño activa/desactiva individualmente.
+    # Ejemplo: {"productos": true, "reportes": false, "ganancias": false, "caja_completa": true}
+    # Claves ausentes se consideran False. El dueño ignora esto porque tiene_permiso()
+    # le devuelve True para todo automáticamente.
+    permisos = db.Column(db.JSON, default=dict)
+
     @property
     def es_superadmin(self):
         return self.rol == 'superadmin'
+
+    def tiene_permiso(self, clave):
+        """True si el usuario puede usar la función 'clave'.
+        El dueño siempre tiene acceso total. Cajero/empleado dependen de sus permisos."""
+        if self.rol == 'dueno':
+            return True
+        return bool((self.permisos or {}).get(clave, False))
 
 
 class Producto(db.Model):

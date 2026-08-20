@@ -10,7 +10,18 @@ from flask_login import (
     logout_user,
 )
 from sqlalchemy import func
-from models import Colmado, DetalleVenta, Fiado, PagoMembresia, Plan, Producto, , Venta, db
+from models import (
+    Colmado,
+    DetalleVenta,
+    Fiado,
+    PagoMembresia,
+    Plan,
+    Producto,
+    Usuario,
+    Venta,
+    db,
+    PERMISOS_DISPONIBLES,
+)
 from werkzeug.security import check_password_hash, generate_password_hash
 
 # Carga las variables del archivo .env (ahí está tu DATABASE_URL)
@@ -41,11 +52,12 @@ login_manager.login_view = "login"
 
 @login_manager.user_loader
 def load_user(user_id):
-  return .query.get(int(user_id))
+  return Usuario.query.get(int(user_id))
 
 
 def solo_dueno(vista):
-  """Decorador: solo el rol 'dueno' puede acceder a esta ruta."""
+  """Decorador: solo el rol 'dueno' puede acceder a esta ruta.
+  Úsalo para lo que NUNCA se delega: agregar/eliminar empleados, configuración, etc."""
   from functools import wraps
 
   @wraps(vista)
@@ -56,6 +68,24 @@ def solo_dueno(vista):
     return vista(*args, **kwargs)
 
   return envoltura
+
+
+def requiere_permiso(clave):
+  """Decorador: el dueño siempre pasa. Cajero/empleado necesitan tener ese
+  permiso activado (ver Usuario.tiene_permiso en models.py)."""
+  from functools import wraps
+
+  def decorador(vista):
+    @wraps(vista)
+    def envoltura(*args, **kwargs):
+      if not current_user.tiene_permiso(clave):
+        flash("No tienes permiso para acceder a esa sección.", "danger")
+        return redirect(url_for("dashboard"))
+      return vista(*args, **kwargs)
+
+    return envoltura
+
+  return decorador
 
 
 def superadmin_requerido(vista):
@@ -230,10 +260,10 @@ def registro_inicial():
   if request.method == "POST":
     nombre_colmado = request.form.get("nombre_colmado")
     nombre_dueno = request.form.get("nombre_dueno")
-     = request.form.get("")
+    usuario = request.form.get("usuario")
     clave = request.form.get("clave")
 
-    if not nombre_colmado or not nombre_dueno or not  or not clave:
+    if not nombre_colmado or not nombre_dueno or not usuario or not clave:
       flash("Todos los campos son obligatorios.", "danger")
       return redirect(url_for("registro_inicial"))
 
@@ -245,10 +275,10 @@ def registro_inicial():
     db.session.add(nuevo_colmado)
     db.session.commit()
 
-    nuevo_dueno = (
+    nuevo_dueno = Usuario(
         colmado_id=nuevo_colmado.id,
         nombre=nombre_dueno,
-        =,
+        usuario=usuario,
         clave_hash=generate_password_hash(clave),
         rol="dueno",
     )
@@ -268,7 +298,7 @@ def registro_inicial():
         <form method="POST">
             <input type="text" name="nombre_colmado" placeholder="Nombre del Colmado" required>
             <input type="text" name="nombre_dueno" placeholder="Nombre del Dueño" required>
-            <input type="text" name="" placeholder="" required>
+            <input type="text" name="usuario" placeholder="Usuario para iniciar sesión" required>
             <input type="password" name="clave" placeholder="Contraseña" required>
             <button type="submit">Registrar</button>
         </form>
@@ -283,9 +313,9 @@ def login():
     return redirect(url_for("registro_inicial"))
 
   if request.method == "POST":
-    user = .query.filter_by(=request.form.get("")).first()
+    user = Usuario.query.filter_by(usuario=request.form.get("usuario")).first()
     if user and not user.activo:
-      flash("Este  está desactivado. Contacta al dueño.", "danger")
+      flash("Este usuario está desactivado. Contacta al dueño.", "danger")
       return redirect(url_for("login"))
     if user and check_password_hash(user.clave_hash, request.form.get("clave")):
       login_user(user)
@@ -301,14 +331,14 @@ def login():
       if colmado and colmado.membresia_vence and colmado.membresia_vence < datetime.utcnow():
         return redirect(url_for("membresia_vencida"))
       return redirect(url_for("dashboard"))
-    flash(" o clave incorrectos", "danger")
+    flash("Usuario o clave incorrectos", "danger")
 
   return render_page(
       "Login",
       """
         <h2>Iniciar Sesión</h2>
         <form method="POST">
-            <input type="text" name="" placeholder="" required>
+            <input type="text" name="usuario" placeholder="Usuario" required>
             <input type="password" name="clave" placeholder="Contraseña" required>
             <button type="submit">Entrar</button>
         </form>
@@ -359,9 +389,15 @@ def dashboard():
             <li><a href="{url_for('fiados')}">💳 Fiados / Deudas</a></li>
     """
 
+  # Estas opciones aparecen si el usuario es dueño, O si es cajero/empleado
+  # con el permiso correspondiente activado por el dueño.
+  opciones_delegables = ""
+  if current_user.tiene_permiso("productos"):
+    opciones_delegables += f'<li><a href="{url_for("nuevo_producto")}">➕ Agregar Producto</a></li>'
+  if current_user.tiene_permiso("reportes"):
+    opciones_delegables += f'<li><a href="{url_for("reportes")}">📊 Reportes</a></li>'
+
   opciones_dueno = f"""
-            <li><a href="{url_for('nuevo_producto')}">➕ Agregar Producto</a></li>
-            <li><a href="{url_for('reportes')}">📊 Reportes</a></li>
             <li><a href="{url_for('empleados')}">👥 Empleados</a></li>
     """ if current_user.rol == "dueno" else ""
 
@@ -407,6 +443,7 @@ def dashboard():
         {aviso_stock}
         <ul class="menu">
             {opciones_comunes}
+            {opciones_delegables}
             {opciones_dueno}
         </ul>
     """
@@ -426,10 +463,10 @@ def logout():
 @login_required
 def productos():
   lista = Producto.query.filter_by(colmado_id=current_user.colmado_id).all()
-  es_dueno = current_user.rol == "dueno"
+  puede_gestionar = current_user.tiene_permiso("productos")
   def fila_producto(p):
     acciones = ""
-    if es_dueno:
+    if puede_gestionar:
       url_editar = url_for("editar_producto", producto_id=p.id)
       url_eliminar = url_for("eliminar_producto", producto_id=p.id)
       confirmacion = f"¿Eliminar {p.nombre}?"
@@ -445,13 +482,19 @@ def productos():
 
   filas = "".join(fila_producto(p) for p in lista) or "<tr><td colspan='4'>Aún no tienes productos registrados.</td></tr>"
 
+  boton_agregar = (
+      f'<br><a class="btn" href="{url_for("nuevo_producto")}">+ Agregar Producto</a>'
+      if puede_gestionar
+      else ""
+  )
+
   cuerpo = f"""
         <h2>📦 Productos</h2>
         <table>
             <tr><th>Nombre</th><th>Precio</th><th>Existencia</th><th></th></tr>
             {filas}
         </table>
-        <br><a class="btn" href="{url_for('nuevo_producto')}">+ Agregar Producto</a>
+        {boton_agregar}
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
   return render_page("Productos", cuerpo)
@@ -459,7 +502,7 @@ def productos():
 
 @app.route("/productos/nuevo", methods=["GET", "POST"])
 @login_required
-@solo_dueno
+@requiere_permiso("productos")
 def nuevo_producto():
   if request.method == "POST":
     nombre = request.form.get("nombre")
@@ -496,7 +539,7 @@ def nuevo_producto():
 
 @app.route("/productos/<int:producto_id>/editar", methods=["GET", "POST"])
 @login_required
-@solo_dueno
+@requiere_permiso("productos")
 def editar_producto(producto_id):
   producto = Producto.query.filter_by(
       id=producto_id, colmado_id=current_user.colmado_id
@@ -533,7 +576,7 @@ def editar_producto(producto_id):
 
 @app.route("/productos/<int:producto_id>/eliminar")
 @login_required
-@solo_dueno
+@requiere_permiso("productos")
 def eliminar_producto(producto_id):
   producto = Producto.query.filter_by(
       id=producto_id, colmado_id=current_user.colmado_id
@@ -596,7 +639,7 @@ def nueva_venta():
 
     venta = Venta(
         colmado_id=current_user.colmado_id,
-        _id=current_user.id,
+        usuario_id=current_user.id,
         total=total,
         es_fiado=es_fiado,
     )
@@ -697,7 +740,7 @@ def recibo(venta_id):
 
   colmado = Colmado.query.get(current_user.colmado_id)
   detalles = DetalleVenta.query.filter_by(venta_id=venta.id).all()
-  cajero = .query.get(venta._id)
+  cajero = Usuario.query.get(venta.usuario_id)
   fiado = Fiado.query.filter_by(venta_id=venta.id).first() if venta.es_fiado else None
 
   filas_detalle = "".join(
@@ -845,7 +888,7 @@ def abonar_fiado(fiado_id):
 
 @app.route("/reportes")
 @login_required
-@solo_dueno
+@requiere_permiso("reportes")
 def reportes():
   colmado_id = current_user.colmado_id
   hoy = datetime.utcnow().date()
@@ -889,15 +932,23 @@ def reportes():
       f"<tr><td>{p.nombre}</td><td>{p.cantidad}</td></tr>" for p in bajo_stock
   ) or "<tr><td colspan='2'>Sin productos en bajo stock</td></tr>"
 
-  cuerpo = f"""
-        <h2>📊 Reportes</h2>
-
+  # Las ganancias/totales de dinero solo se muestran si el usuario tiene
+  # el permiso "ganancias" (el dueño siempre lo tiene).
+  seccion_ganancias = ""
+  if current_user.tiene_permiso("ganancias"):
+    seccion_ganancias = f"""
         <h3>Ventas</h3>
         <ul class="simple">
             <li>Hoy: <strong>RD$ {total_hoy:.2f}</strong></li>
             <li>Esta semana: <strong>RD$ {total_semana:.2f}</strong></li>
             <li>Este mes: <strong>RD$ {total_mes:.2f}</strong></li>
         </ul>
+    """
+
+  cuerpo = f"""
+        <h2>📊 Reportes</h2>
+
+        {seccion_ganancias}
 
         <h3>Productos más vendidos</h3>
         <table>
@@ -916,21 +967,24 @@ def reportes():
   return render_page("Reportes", cuerpo)
 
 
-# --- EMPLEADOS (solo dueño) ---
+# --- EMPLEADOS (solo dueño: alta/baja/permisos NUNCA se delegan) ---
 
 
 @app.route("/empleados")
 @login_required
 @solo_dueno
 def empleados():
-  lista = .query.filter_by(colmado_id=current_user.colmado_id).all()
+  lista = Usuario.query.filter_by(colmado_id=current_user.colmado_id).all()
   filas = "".join(
       f"""<tr>
                 <td>{u.nombre}</td>
-                <td>{u.}</td>
+                <td>{u.usuario}</td>
                 <td><span class="pill {'pill-ok' if u.rol == 'dueno' else 'pill-pend'}">{u.rol}</span></td>
                 <td><span class="pill {'pill-ok' if u.activo else 'pill-pend'}">{'Activo' if u.activo else 'Inactivo'}</span></td>
-                <td>{'' if u.id == current_user.id else f'<a class="btn-link" href="{url_for("alternar_empleado", _id=u.id)}">{"Desactivar" if u.activo else "Activar"}</a>'}</td>
+                <td>
+                    {'' if u.rol == 'dueno' else f'<a class="btn-link" href="{url_for("permisos_empleado", usuario_id=u.id)}">Permisos</a> · '}
+                    {'' if u.id == current_user.id else f'<a class="btn-link" href="{url_for("alternar_empleado", usuario_id=u.id)}">{"Desactivar" if u.activo else "Activar"}</a>'}
+                </td>
             </tr>"""
       for u in lista
   )
@@ -938,7 +992,7 @@ def empleados():
   cuerpo = f"""
         <h2>👥 Empleados</h2>
         <table>
-            <tr><th>Nombre</th><th></th><th>Rol</th><th>Estado</th><th></th></tr>
+            <tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th></th></tr>
             {filas}
         </table>
         <br><a class="btn" href="{url_for('nuevo_empleado')}">+ Agregar Empleado</a>
@@ -953,35 +1007,36 @@ def empleados():
 def nuevo_empleado():
   if request.method == "POST":
     nombre = request.form.get("nombre")
-     = request.form.get("")
+    usuario = request.form.get("usuario")
     clave = request.form.get("clave")
     rol = request.form.get("rol")
 
-    if not nombre or not  or not clave or rol not in ("cajero", "empleado"):
+    if not nombre or not usuario or not clave or rol not in ("cajero", "empleado"):
       flash("Todos los campos son obligatorios.", "danger")
       return redirect(url_for("nuevo_empleado"))
 
-    if .query.filter_by(=).first():
-      flash("Ese  ya existe, elige otro.", "danger")
+    if Usuario.query.filter_by(usuario=usuario).first():
+      flash("Ese usuario ya existe, elige otro.", "danger")
       return redirect(url_for("nuevo_empleado"))
 
-    nuevo = (
+    nuevo = Usuario(
         colmado_id=current_user.colmado_id,
         nombre=nombre,
-        =,
+        usuario=usuario,
         clave_hash=generate_password_hash(clave),
         rol=rol,
+        permisos={},  # sin permisos delegados por defecto; el dueño los activa después
     )
     db.session.add(nuevo)
     db.session.commit()
-    flash("Empleado agregado correctamente.", "success")
+    flash("Empleado agregado correctamente. Puedes asignarle permisos desde 'Empleados'.", "success")
     return redirect(url_for("empleados"))
 
   cuerpo = f"""
         <h2>➕ Nuevo Empleado</h2>
         <form method="POST">
             <input type="text" name="nombre" placeholder="Nombre completo" required>
-            <input type="text" name="" placeholder=" para iniciar sesión" required>
+            <input type="text" name="usuario" placeholder="Usuario para iniciar sesión" required>
             <input type="password" name="clave" placeholder="Contraseña" required>
             <label><input type="radio" name="rol" value="cajero" checked> Cajero (vender y consultar)</label>
             <label><input type="radio" name="rol" value="empleado"> Empleado básico</label>
@@ -992,26 +1047,72 @@ def nuevo_empleado():
   return render_page("Nuevo Empleado", cuerpo)
 
 
-@app.route("/empleados/<int:_id>/alternar")
+@app.route("/empleados/<int:usuario_id>/alternar")
 @login_required
 @solo_dueno
-def alternar_empleado(_id):
-  _obj = .query.filter_by(
-      id=_id, colmado_id=current_user.colmado_id
+def alternar_empleado(usuario_id):
+  usuario_obj = Usuario.query.filter_by(
+      id=usuario_id, colmado_id=current_user.colmado_id
   ).first_or_404()
 
-  if _obj.id == current_user.id:
+  if usuario_obj.id == current_user.id:
     flash("No puedes desactivar tu propia cuenta.", "danger")
     return redirect(url_for("empleados"))
 
-  _obj.activo = not _obj.activo
+  usuario_obj.activo = not usuario_obj.activo
   db.session.commit()
   flash("Estado del empleado actualizado.", "success")
   return redirect(url_for("empleados"))
 
 
+@app.route("/empleados/<int:usuario_id>/permisos", methods=["GET", "POST"])
+@login_required
+@solo_dueno
+def permisos_empleado(usuario_id):
+  """Pantalla del dueño para activar/desactivar, por checkbox, qué puede
+  hacer cada cajero/empleado. El dueño siempre tiene acceso total y no
+  aparece aquí; agregar/eliminar empleados y configuración nunca se delegan."""
+  usuario_obj = Usuario.query.filter_by(
+      id=usuario_id, colmado_id=current_user.colmado_id
+  ).first_or_404()
+
+  if usuario_obj.rol == "dueno":
+    flash("El dueño ya tiene acceso total; no necesita permisos.", "danger")
+    return redirect(url_for("empleados"))
+
+  if request.method == "POST":
+    nuevos_permisos = {
+        clave: (request.form.get(clave) == "on")
+        for clave in PERMISOS_DISPONIBLES
+    }
+    usuario_obj.permisos = nuevos_permisos
+    db.session.commit()
+    flash(f"Permisos de {usuario_obj.nombre} actualizados.", "success")
+    return redirect(url_for("empleados"))
+
+  permisos_actuales = usuario_obj.permisos or {}
+  checkboxes = "".join(
+      f"""<label>
+                <input type="checkbox" name="{clave}" {"checked" if permisos_actuales.get(clave) else ""}>
+                {descripcion}
+            </label>"""
+      for clave, descripcion in PERMISOS_DISPONIBLES.items()
+  )
+
+  cuerpo = f"""
+        <h2>🔐 Permisos de {usuario_obj.nombre}</h2>
+        <p style="color:var(--gris);">Marca lo que este empleado puede hacer además de vender y consultar.</p>
+        <form method="POST">
+            {checkboxes}
+            <button type="submit">Guardar Permisos</button>
+        </form>
+        <br><a class="btn-link volver" href="{url_for('empleados')}">← Volver</a>
+    """
+  return render_page("Permisos", cuerpo)
+
+
 # --- SUPER-ADMIN (tú, el creador del sistema) ---
-# Entra por el mismo /login de siempre, con un  que tenga rol='superadmin'.
+# Entra por el mismo /login de siempre, con un usuario que tenga rol='superadmin'.
 
 
 @app.route("/superadmin/panel")
@@ -1062,16 +1163,16 @@ def superadmin_nuevo_colmado():
   if request.method == "POST":
     nombre_colmado = request.form.get("nombre_colmado")
     nombre_dueno = request.form.get("nombre_dueno")
-     = request.form.get("")
+    usuario = request.form.get("usuario")
     clave = request.form.get("clave")
     plan_id = request.form.get("plan_id") or None
 
-    if not nombre_colmado or not nombre_dueno or not  or not clave:
+    if not nombre_colmado or not nombre_dueno or not usuario or not clave:
       flash("Todos los campos son obligatorios.", "danger")
       return redirect(url_for("superadmin_nuevo_colmado"))
 
-    if .query.filter_by(=).first():
-      flash("Ese  ya existe, elige otro.", "danger")
+    if Usuario.query.filter_by(usuario=usuario).first():
+      flash("Ese usuario ya existe, elige otro.", "danger")
       return redirect(url_for("superadmin_nuevo_colmado"))
 
     plan = Plan.query.get(int(plan_id)) if plan_id else None
@@ -1086,10 +1187,10 @@ def superadmin_nuevo_colmado():
     db.session.add(nuevo_colmado)
     db.session.commit()
 
-    nuevo_dueno = (
+    nuevo_dueno = Usuario(
         colmado_id=nuevo_colmado.id,
         nombre=nombre_dueno,
-        =,
+        usuario=usuario,
         clave_hash=generate_password_hash(clave),
         rol="dueno",
     )
@@ -1109,7 +1210,7 @@ def superadmin_nuevo_colmado():
         <form method="POST">
             <input type="text" name="nombre_colmado" placeholder="Nombre del Colmado" required>
             <input type="text" name="nombre_dueno" placeholder="Nombre del Dueño" required>
-            <input type="text" name="" placeholder=" del dueño" required>
+            <input type="text" name="usuario" placeholder="Usuario del dueño" required>
             <input type="password" name="clave" placeholder="Contraseña del dueño" required>
             <label>Plan: <select name="plan_id">{opciones_plan}</select></label>
             <button type="submit">Crear Colmado</button>
@@ -1124,17 +1225,17 @@ def superadmin_nuevo_colmado():
 @superadmin_requerido
 def superadmin_colmado(colmado_id):
   colmado = Colmado.query.get_or_404(colmado_id)
-  s = .query.filter_by(colmado_id=colmado.id).all()
+  usuarios = Usuario.query.filter_by(colmado_id=colmado.id).all()
   planes = Plan.query.filter_by(activo=True).all()
 
-  filas_s = "".join(
+  filas_usuarios = "".join(
       f"""<tr>
-                <td>{u.nombre}</td><td>{u.}</td>
+                <td>{u.nombre}</td><td>{u.usuario}</td>
                 <td><span class="pill pill-ok">{u.rol}</span></td>
                 <td><span class="pill {'pill-ok' if u.activo else 'pill-pend'}">{'Activo' if u.activo else 'Inactivo'}</span></td>
             </tr>"""
-      for u in s
-  ) or "<tr><td colspan='4'>Sin s.</td></tr>"
+      for u in usuarios
+  ) or "<tr><td colspan='4'>Sin usuarios.</td></tr>"
 
   opciones_plan = "".join(
       f'<option value="{p.id}" {"selected" if colmado.plan_id == p.id else ""}>{p.nombre} (RD$ {p.precio:.2f} / {p.duracion_dias} días)</option>'
@@ -1176,10 +1277,10 @@ def superadmin_colmado(colmado_id):
               onclick="return confirm('¿Eliminar el colmado {colmado.nombre}? Esto lo desactiva por completo.')">🗑️ Eliminar</a>
         </p>
 
-        <h3>s (dueño / empleados)</h3>
+        <h3>Usuarios (dueño / empleados)</h3>
         <table>
-            <tr><th>Nombre</th><th></th><th>Rol</th><th>Estado</th></tr>
-            {filas_s}
+            <tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th></tr>
+            {filas_usuarios}
         </table>
 
         <br><a class="btn-link volver" href="{url_for('superadmin_panel')}">← Volver al panel</a>

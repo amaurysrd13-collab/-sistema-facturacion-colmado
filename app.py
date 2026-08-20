@@ -124,25 +124,39 @@ ESTILOS = """
     --borde: #e2e5e4;
     --texto: #1f2a24;
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0;
     font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     background: var(--fondo);
     color: var(--texto);
+    font-size: 16px;
   }
+
+  /* ---------- BARRA SUPERIOR ---------- */
   .topbar {
     background: var(--verde);
     color: #fff;
-    padding: 14px 24px;
+    padding: 14px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 10;
   }
   .topbar .brand { font-weight: 700; font-size: 1.1rem; text-decoration: none; color: #fff; }
-  .topbar .salir { color: #fff; text-decoration: none; font-size: 0.9rem; opacity: 0.9; }
-  .topbar .salir:hover { opacity: 1; text-decoration: underline; }
-  .wrap { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+  .topbar .salir {
+    color: #fff; text-decoration: none; font-size: 0.9rem; opacity: 0.9;
+    padding: 8px 10px; border-radius: 8px;
+  }
+  .topbar .salir:active, .topbar .salir:hover { opacity: 1; background: rgba(255,255,255,0.15); }
+
+  /* ---------- CONTENEDOR PRINCIPAL ---------- */
+  /* En PC/tablet grande se centra con un ancho cómodo de leer.
+     En celular ocupa el ancho completo con margen chico. */
+  .wrap { max-width: 720px; margin: 24px auto; padding: 0 16px; }
   .card {
     background: #fff;
     border: 1px solid var(--borde);
@@ -151,11 +165,18 @@ ESTILOS = """
     margin-bottom: 20px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }
-  h1, h2, h3 { margin-top: 0; }
-  h2 { color: var(--verde-oscuro); }
-  .menu { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 10px; }
+  h1, h2, h3 { margin-top: 0; line-height: 1.25; }
+  h1 { font-size: 1.4rem; }
+  h2 { color: var(--verde-oscuro); font-size: 1.2rem; }
+  h3 { font-size: 1.05rem; }
+
+  /* ---------- MENÚ PRINCIPAL (dashboard) ---------- */
+  /* Una columna en celular; se acomoda solo en pantallas más anchas. */
+  .menu { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 10px; grid-template-columns: 1fr; }
   .menu li a {
-    display: block;
+    display: flex;
+    align-items: center;
+    min-height: 48px;
     background: var(--verde-claro);
     color: var(--verde-oscuro);
     text-decoration: none;
@@ -164,46 +185,80 @@ ESTILOS = """
     font-weight: 600;
     transition: background 0.15s;
   }
-  .menu li a:hover { background: #d5ecdc; }
-  form { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
-  input[type=text], input[type=password], input[type=number], input[type=date], select {
-    padding: 10px 12px;
+  .menu li a:active, .menu li a:hover { background: #d5ecdc; }
+
+  /* ---------- FORMULARIOS ---------- */
+  form { display: flex; flex-direction: column; gap: 12px; max-width: 420px; width: 100%; }
+  input[type=text], input[type=password], input[type=number], input[type=date], select, textarea {
+    padding: 12px 12px;
     border: 1px solid var(--borde);
     border-radius: 8px;
-    font-size: 1rem;
+    font-size: 1rem;   /* 16px+ evita que iPhone haga zoom automático al enfocar */
     width: 100%;
+    background: #fff;
+    color: var(--texto);
   }
-  input:focus, select:focus { outline: 2px solid var(--verde); border-color: var(--verde); }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--verde); border-color: var(--verde); }
   label { font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+
+  /* ---------- BOTONES (tamaño cómodo para el dedo) ---------- */
   button, .btn {
     background: var(--verde);
     color: #fff;
     border: none;
-    padding: 11px 18px;
+    padding: 13px 18px;
+    min-height: 46px;
     border-radius: 8px;
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
     text-decoration: none;
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     text-align: center;
+    margin-bottom: 4px;
   }
-  button:hover, .btn:hover { background: var(--verde-oscuro); }
-  .btn-link { background: none; color: var(--verde-oscuro); padding: 8px 0; font-weight: 600; }
+  button:active, button:hover, .btn:active, .btn:hover { background: var(--verde-oscuro); }
+  .btn-link {
+    background: none; color: var(--verde-oscuro); padding: 10px 0; font-weight: 600;
+    min-height: 40px; display: inline-flex; align-items: center;
+  }
   .btn-link:hover { text-decoration: underline; background: none; }
-  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--borde); font-size: 0.95rem; }
-  th { color: var(--gris); font-weight: 600; text-transform: uppercase; font-size: 0.78rem; }
+
+  /* ---------- TABLAS ---------- */
+  /* En celular las tablas anchas se deslizan horizontalmente en vez
+     de romper el diseño o achicar el texto hasta ser ilegible. */
+  .tabla-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; min-width: 480px; border-collapse: collapse; margin-top: 8px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--borde); font-size: 0.9rem; white-space: nowrap; }
+  th { color: var(--gris); font-weight: 600; text-transform: uppercase; font-size: 0.72rem; }
   tr:last-child td { border-bottom: none; }
+
   .flash { padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; font-size: 0.95rem; }
   .flash-success { background: #e8f5ec; color: var(--verde-oscuro); }
   .flash-danger { background: #fdecea; color: var(--rojo); }
   .volver { margin-top: 16px; display: inline-block; }
-  .pill { padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
+  .pill { padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
   .pill-ok { background: #e8f5ec; color: var(--verde-oscuro); }
   .pill-pend { background: #fdecea; color: var(--rojo); }
   ul.simple { padding-left: 18px; }
   ul.simple li { margin-bottom: 6px; }
+
+  /* ---------- TABLET (a partir de 640px) ---------- */
+  @media (min-width: 640px) {
+    .wrap { padding: 0 24px; }
+    .card { padding: 32px; }
+    h1 { font-size: 1.6rem; }
+    h2 { font-size: 1.35rem; }
+    .menu { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* ---------- PC / PANTALLAS GRANDES (a partir de 960px) ---------- */
+  @media (min-width: 960px) {
+    .wrap { max-width: 900px; margin: 40px auto; }
+    .menu { grid-template-columns: repeat(3, 1fr); }
+  }
 </style>
 """
 
@@ -497,10 +552,12 @@ def productos():
 
   cuerpo = f"""
         <h2>📦 Productos</h2>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr><th>Nombre</th><th>Precio</th><th>Existencia</th><th></th></tr>
             {filas}
         </table>
+            </div>
         {boton_agregar}
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
@@ -729,10 +786,12 @@ def nueva_venta():
   cuerpo = f"""
         <h2>🧾 Nueva Venta</h2>
         <form method="POST" id="form-venta">
+            <div class="tabla-scroll">
             <table>
                 <tr><th>Producto</th><th>Precio</th><th>Existencia</th><th>Cant. a vender</th></tr>
                 {filas}
             </table>
+            </div>
             <label><input type="checkbox" name="es_fiado" id="es_fiado"> Es venta fiada (a crédito)</label>
             <input type="text" name="nombre_cliente" placeholder="Nombre del cliente (si es fiado)">
             <input type="text" name="telefono_cliente" placeholder="Teléfono del cliente (opcional)">
@@ -821,10 +880,12 @@ def ventas():
 
   cuerpo = f"""
         <h2>📜 Historial de Ventas</h2>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr><th>#</th><th>Fecha</th><th>Total</th><th>Estado</th><th></th></tr>
             {filas}
         </table>
+            </div>
         <br><a class="btn" href="{url_for('nueva_venta')}">+ Nueva Venta</a>
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
@@ -880,10 +941,12 @@ def recibo(venta_id):
             <p style="text-align:center; color:var(--gris); margin-top:4px;">Recibo de Venta #{venta.id}</p>
             <p style="text-align:center; color:var(--gris); font-size:0.85rem;">{venta.fecha.strftime('%d/%m/%Y %H:%M')} · Atendió: {cajero.nombre if cajero else '-'}</p>
             {linea_fiado}
+            <div class="tabla-scroll">
             <table>
                 <tr><th>Producto</th><th style="text-align:center">Cant.</th><th style="text-align:right">Precio</th><th style="text-align:right">Subtotal</th></tr>
                 {filas_detalle}
             </table>
+            </div>
             <h3 style="text-align:right; margin-top:16px;">Total: RD$ {venta.total:.2f}</h3>
             {linea_efectivo}
             <p style="text-align:center; color:var(--gris); font-size:0.85rem;">¡Gracias por su compra!</p>
@@ -933,13 +996,15 @@ def fiados():
 
   cuerpo = f"""
         <h2>💳 Fiados / Deudas</h2>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr>
                 <th>Cliente</th><th>Teléfono</th><th>Total</th>
                 <th>Pagado</th><th>Pendiente</th><th>Estado</th><th></th>
             </tr>
             {filas}
         </table>
+            </div>
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
   return render_page("Fiados", cuerpo)
@@ -1072,16 +1137,20 @@ def reportes():
         {seccion_ganancias}
 
         <h3>Productos más vendidos</h3>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr><th>Producto</th><th>Unidades vendidas</th></tr>
             {filas_top}
         </table>
+            </div>
 
         <h3>Bajo stock (menos de {UMBRAL_BAJO_STOCK} unidades)</h3>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr><th>Producto</th><th>Cantidad</th></tr>
             {filas_bajo_stock}
         </table>
+            </div>
 
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
@@ -1295,10 +1364,12 @@ def caja_movimientos():
 
   cuerpo = f"""
         <h2>📜 Movimientos de Hoy</h2>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr><th>Hora</th><th>Monto</th><th>Motivo</th><th>Registrado por</th></tr>
             {filas}
         </table>
+            </div>
         <br><a class="btn-link volver" href="{url_for('caja')}">← Volver</a>
     """
   return render_page("Movimientos de Caja", cuerpo)
@@ -1409,10 +1480,12 @@ def caja_diferencias():
   cuerpo = f"""
         <h2>⚠️ Diferencias de Caja</h2>
         <p style="color:var(--gris);">Últimos 30 cierres de caja registrados.</p>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr><th>Fecha</th><th>Esperado</th><th>Contado</th><th>Resultado</th><th>Cerrado por</th></tr>
             {filas}
         </table>
+            </div>
         <br><a class="btn-link volver" href="{url_for('caja')}">← Volver</a>
     """
   return render_page("Diferencias de Caja", cuerpo)
@@ -1462,10 +1535,12 @@ def delivery():
 
   cuerpo = f"""
         <h2>🛵 Delivery</h2>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr><th>#</th><th>Cliente</th><th>Dirección</th><th>Repartidor</th><th>Estado</th><th></th></tr>
             {filas}
         </table>
+            </div>
         <br><a class="btn" href="{url_for('nuevo_pedido')}">+ Crear Pedido</a>
         <a class="btn" href="{url_for('delivery_historial')}" style="background:var(--gris);">📜 Historial</a>
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
@@ -1627,10 +1702,12 @@ def delivery_historial():
 
   cuerpo = f"""
         <h2>📜 Historial de Deliveries</h2>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr><th>#</th><th>Cliente</th><th>Repartidor</th><th>Entregado</th></tr>
             {filas}
         </table>
+            </div>
         <br><a class="btn-link volver" href="{url_for('delivery')}">← Volver</a>
     """
   return render_page("Historial de Delivery", cuerpo)
@@ -1660,10 +1737,12 @@ def empleados():
 
   cuerpo = f"""
         <h2>👥 Empleados</h2>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th></th></tr>
             {filas}
         </table>
+            </div>
         <br><a class="btn" href="{url_for('nuevo_empleado')}">+ Agregar Empleado</a>
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
@@ -1811,10 +1890,12 @@ def superadmin_panel():
   cuerpo = f"""
         <h2>🔐 Panel de Super-Administrador</h2>
         <p style="color:var(--gris);">Todos los colmados registrados en el sistema.</p>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr><th>Colmado</th><th>Dueño</th><th>Plan</th><th>Vence</th><th>Estado</th></tr>
             {filas}
         </table>
+            </div>
         <br>
         <a class="btn" href="{url_for('superadmin_nuevo_colmado')}">+ Nuevo Colmado</a>
         <a class="btn" href="{url_for('superadmin_planes')}" style="background:var(--gris);">📋 Planes</a>
@@ -1947,10 +2028,12 @@ def superadmin_colmado(colmado_id):
         </p>
 
         <h3>Usuarios (dueño / empleados)</h3>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th></tr>
             {filas_usuarios}
         </table>
+            </div>
 
         <br><a class="btn-link volver" href="{url_for('superadmin_panel')}">← Volver al panel</a>
     """
@@ -2047,10 +2130,12 @@ def superadmin_planes():
 
   cuerpo = f"""
         <h2>📋 Planes</h2>
-        <table>
+        <div class="tabla-scroll">
+            <table>
             <tr><th>Nombre</th><th>Precio</th><th>Duración</th><th>Estado</th><th></th></tr>
             {filas}
         </table>
+            </div>
         <h3>Nuevo Plan</h3>
         <form method="POST" action="{url_for('superadmin_nuevo_plan')}">
             <input type="text" name="nombre" placeholder="Nombre del plan" required>

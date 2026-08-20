@@ -12,9 +12,12 @@ from flask_login import (
 from sqlalchemy import func
 from models import (
     Colmado,
+    CuadreCaja,
     DetalleVenta,
     Fiado,
+    MovimientoCaja,
     PagoMembresia,
+    Pedido,
     Plan,
     Producto,
     Usuario,
@@ -387,6 +390,7 @@ def dashboard():
             <li><a href="{url_for('nueva_venta')}">🧾 Nueva Venta</a></li>
             <li><a href="{url_for('ventas')}">📜 Historial de Ventas</a></li>
             <li><a href="{url_for('fiados')}">💳 Fiados / Deudas</a></li>
+            <li><a href="{url_for('delivery')}">🛵 Delivery</a></li>
     """
 
   # Estas opciones aparecen si el usuario es dueño, O si es cajero/empleado
@@ -396,6 +400,8 @@ def dashboard():
     opciones_delegables += f'<li><a href="{url_for("nuevo_producto")}">➕ Agregar Producto</a></li>'
   if current_user.tiene_permiso("reportes"):
     opciones_delegables += f'<li><a href="{url_for("reportes")}">📊 Reportes</a></li>'
+  if current_user.tiene_permiso("caja_completa"):
+    opciones_delegables += f'<li><a href="{url_for("caja")}">💰 Caja</a></li>'
 
   opciones_dueno = f"""
             <li><a href="{url_for('empleados')}">👥 Empleados</a></li>
@@ -965,6 +971,508 @@ def reportes():
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
   return render_page("Reportes", cuerpo)
+
+
+# --- CAJA ---
+
+
+def _rango_hoy():
+  hoy = datetime.utcnow().date()
+  return datetime(hoy.year, hoy.month, hoy.day)
+
+
+def _efectivo_esperado_hoy(colmado_id):
+  """Ventas no fiadas de hoy (se asumen en efectivo) + entradas - salidas de hoy."""
+  inicio_hoy = _rango_hoy()
+
+  total_ventas_efectivo = (
+      db.session.query(func.coalesce(func.sum(Venta.total), 0.0))
+      .filter(
+          Venta.colmado_id == colmado_id,
+          Venta.fecha >= inicio_hoy,
+          Venta.es_fiado == False,  # noqa: E712
+      )
+      .scalar()
+  ) or 0.0
+
+  total_entradas = (
+      db.session.query(func.coalesce(func.sum(MovimientoCaja.monto), 0.0))
+      .filter(
+          MovimientoCaja.colmado_id == colmado_id,
+          MovimientoCaja.fecha >= inicio_hoy,
+          MovimientoCaja.tipo == "entrada",
+      )
+      .scalar()
+  ) or 0.0
+
+  total_salidas = (
+      db.session.query(func.coalesce(func.sum(MovimientoCaja.monto), 0.0))
+      .filter(
+          MovimientoCaja.colmado_id == colmado_id,
+          MovimientoCaja.fecha >= inicio_hoy,
+          MovimientoCaja.tipo == "salida",
+      )
+      .scalar()
+  ) or 0.0
+
+  return total_ventas_efectivo + total_entradas - total_salidas
+
+
+@app.route("/caja")
+@login_required
+@requiere_permiso("caja_completa")
+def caja():
+  esperado_hoy = _efectivo_esperado_hoy(current_user.colmado_id)
+  cuerpo = f"""
+        <h2>💰 Caja</h2>
+        <p style="color:var(--gris);">Efectivo esperado hoy (ventas en efectivo + entradas - salidas): <strong>RD$ {esperado_hoy:.2f}</strong></p>
+        <ul class="menu">
+            <li><a href="{url_for('caja_entrada')}">➕ Entrada de Dinero</a></li>
+            <li><a href="{url_for('caja_salida')}">➖ Salida de Dinero</a></li>
+            <li><a href="{url_for('caja_movimientos')}">📜 Movimientos de Hoy</a></li>
+            <li><a href="{url_for('caja_cuadre')}">🧮 Cuadre de Caja</a></li>
+            <li><a href="{url_for('caja_diferencias')}">⚠️ Diferencias de Caja</a></li>
+        </ul>
+        <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
+    """
+  return render_page("Caja", cuerpo)
+
+
+@app.route("/caja/entrada", methods=["GET", "POST"])
+@login_required
+@requiere_permiso("caja_completa")
+def caja_entrada():
+  if request.method == "POST":
+    monto = request.form.get("monto")
+    motivo = request.form.get("motivo")
+
+    if not monto or not motivo:
+      flash("Todos los campos son obligatorios.", "danger")
+      return redirect(url_for("caja_entrada"))
+
+    try:
+      monto = float(monto)
+    except ValueError:
+      flash("El monto no es válido.", "danger")
+      return redirect(url_for("caja_entrada"))
+
+    if monto <= 0:
+      flash("El monto debe ser mayor a cero.", "danger")
+      return redirect(url_for("caja_entrada"))
+
+    movimiento = MovimientoCaja(
+        colmado_id=current_user.colmado_id,
+        usuario_id=current_user.id,
+        tipo="entrada",
+        monto=monto,
+        motivo=motivo,
+    )
+    db.session.add(movimiento)
+    db.session.commit()
+    flash(f"Entrada de RD$ {monto:.2f} registrada.", "success")
+    return redirect(url_for("caja"))
+
+  cuerpo = f"""
+        <h2>➕ Entrada de Dinero</h2>
+        <form method="POST">
+            <input type="number" step="0.01" name="monto" placeholder="Monto" required>
+            <input type="text" name="motivo" placeholder="Motivo (ej. Aporte de capital)" required>
+            <button type="submit">Registrar Entrada</button>
+        </form>
+        <br><a class="btn-link volver" href="{url_for('caja')}">← Volver</a>
+    """
+  return render_page("Entrada de Dinero", cuerpo)
+
+
+@app.route("/caja/salida", methods=["GET", "POST"])
+@login_required
+@requiere_permiso("caja_completa")
+def caja_salida():
+  if request.method == "POST":
+    monto = request.form.get("monto")
+    motivo = request.form.get("motivo")
+
+    if not monto or not motivo:
+      flash("Todos los campos son obligatorios.", "danger")
+      return redirect(url_for("caja_salida"))
+
+    try:
+      monto = float(monto)
+    except ValueError:
+      flash("El monto no es válido.", "danger")
+      return redirect(url_for("caja_salida"))
+
+    if monto <= 0:
+      flash("El monto debe ser mayor a cero.", "danger")
+      return redirect(url_for("caja_salida"))
+
+    movimiento = MovimientoCaja(
+        colmado_id=current_user.colmado_id,
+        usuario_id=current_user.id,
+        tipo="salida",
+        monto=monto,
+        motivo=motivo,
+    )
+    db.session.add(movimiento)
+    db.session.commit()
+    flash(f"Salida de RD$ {monto:.2f} registrada.", "success")
+    return redirect(url_for("caja"))
+
+  cuerpo = f"""
+        <h2>➖ Salida de Dinero</h2>
+        <form method="POST">
+            <input type="number" step="0.01" name="monto" placeholder="Monto" required>
+            <input type="text" name="motivo" placeholder="Motivo (ej. Compra de fundas)" required>
+            <button type="submit">Registrar Salida</button>
+        </form>
+        <br><a class="btn-link volver" href="{url_for('caja')}">← Volver</a>
+    """
+  return render_page("Salida de Dinero", cuerpo)
+
+
+@app.route("/caja/movimientos")
+@login_required
+@requiere_permiso("caja_completa")
+def caja_movimientos():
+  inicio_hoy = _rango_hoy()
+  lista = (
+      MovimientoCaja.query.filter(
+          MovimientoCaja.colmado_id == current_user.colmado_id,
+          MovimientoCaja.fecha >= inicio_hoy,
+      )
+      .order_by(MovimientoCaja.fecha.desc())
+      .all()
+  )
+
+  def fila(m):
+    usuario_mov = Usuario.query.get(m.usuario_id)
+    signo = "+" if m.tipo == "entrada" else "-"
+    color = "pill-ok" if m.tipo == "entrada" else "pill-pend"
+    return f"""<tr>
+                <td>{m.fecha.strftime('%H:%M')}</td>
+                <td><span class="pill {color}">{signo} RD$ {m.monto:.2f}</span></td>
+                <td>{m.motivo}</td>
+                <td>{usuario_mov.nombre if usuario_mov else '-'}</td>
+            </tr>"""
+
+  filas = "".join(fila(m) for m in lista) or "<tr><td colspan='4'>Sin movimientos hoy.</td></tr>"
+
+  cuerpo = f"""
+        <h2>📜 Movimientos de Hoy</h2>
+        <table>
+            <tr><th>Hora</th><th>Monto</th><th>Motivo</th><th>Registrado por</th></tr>
+            {filas}
+        </table>
+        <br><a class="btn-link volver" href="{url_for('caja')}">← Volver</a>
+    """
+  return render_page("Movimientos de Caja", cuerpo)
+
+
+@app.route("/caja/cuadre", methods=["GET", "POST"])
+@login_required
+@requiere_permiso("caja_completa")
+def caja_cuadre():
+  esperado = _efectivo_esperado_hoy(current_user.colmado_id)
+
+  if request.method == "POST":
+    contado_str = request.form.get("contado", "0")
+    nota = request.form.get("nota", "").strip()
+
+    try:
+      contado = float(contado_str)
+    except ValueError:
+      flash("El monto contado no es válido.", "danger")
+      return redirect(url_for("caja_cuadre"))
+
+    diferencia = contado - esperado
+
+    cuadre = CuadreCaja(
+        colmado_id=current_user.colmado_id,
+        usuario_id=current_user.id,
+        efectivo_esperado=esperado,
+        efectivo_contado=contado,
+        diferencia=diferencia,
+        nota=nota,
+    )
+    db.session.add(cuadre)
+    db.session.commit()
+
+    if abs(diferencia) < 0.01:
+      flash("¡Cuadre perfecto! No hay diferencia.", "success")
+    elif diferencia > 0:
+      flash(f"Cuadre registrado. Sobran RD$ {diferencia:.2f}.", "danger")
+    else:
+      flash(f"Cuadre registrado. Faltan RD$ {abs(diferencia):.2f}.", "danger")
+    return redirect(url_for("caja"))
+
+  cuerpo = f"""
+        <h2>🧮 Cuadre de Caja</h2>
+        <p>Efectivo que el sistema espera hoy: <strong>RD$ {esperado:.2f}</strong></p>
+        <form method="POST">
+            <input type="number" step="0.01" name="contado" placeholder="Efectivo contado físicamente" required>
+            <input type="text" name="nota" placeholder="Nota (opcional)">
+            <button type="submit">Registrar Cuadre</button>
+        </form>
+        <br><a class="btn-link volver" href="{url_for('caja')}">← Volver</a>
+    """
+  return render_page("Cuadre de Caja", cuerpo)
+
+
+@app.route("/caja/diferencias")
+@login_required
+@requiere_permiso("caja_completa")
+def caja_diferencias():
+  lista = (
+      CuadreCaja.query.filter_by(colmado_id=current_user.colmado_id)
+      .order_by(CuadreCaja.fecha.desc())
+      .limit(30)
+      .all()
+  )
+
+  def fila(c):
+    usuario_c = Usuario.query.get(c.usuario_id)
+    if abs(c.diferencia) < 0.01:
+      pill = '<span class="pill pill-ok">Cuadrado</span>'
+    else:
+      pill = f'<span class="pill pill-pend">{"Sobran" if c.diferencia > 0 else "Faltan"} RD$ {abs(c.diferencia):.2f}</span>'
+    return f"""<tr>
+                <td>{c.fecha.strftime('%d/%m/%Y %H:%M')}</td>
+                <td>RD$ {c.efectivo_esperado:.2f}</td>
+                <td>RD$ {c.efectivo_contado:.2f}</td>
+                <td>{pill}</td>
+                <td>{usuario_c.nombre if usuario_c else '-'}</td>
+            </tr>"""
+
+  filas = "".join(fila(c) for c in lista) or "<tr><td colspan='5'>Aún no hay cuadres registrados.</td></tr>"
+
+  cuerpo = f"""
+        <h2>⚠️ Diferencias de Caja</h2>
+        <p style="color:var(--gris);">Últimos 30 cuadres registrados.</p>
+        <table>
+            <tr><th>Fecha</th><th>Esperado</th><th>Contado</th><th>Resultado</th><th>Registrado por</th></tr>
+            {filas}
+        </table>
+        <br><a class="btn-link volver" href="{url_for('caja')}">← Volver</a>
+    """
+  return render_page("Diferencias de Caja", cuerpo)
+
+
+# --- DELIVERY ---
+# Todos los usuarios (dueño, cajero, empleado) pueden usar este módulo:
+# el dueño y cajero para crear/asignar pedidos, y cualquier empleado para
+# ver y actualizar los pedidos que tiene asignados.
+
+
+def _pill_estado_pedido(estado):
+  mapa = {
+      "pendiente": ("pill-pend", "Pendiente"),
+      "en_camino": ("pill-pend", "En camino"),
+      "entregado": ("pill-ok", "Entregado"),
+  }
+  clase, texto = mapa.get(estado, ("pill-pend", estado))
+  return f'<span class="pill {clase}">{texto}</span>'
+
+
+@app.route("/delivery")
+@login_required
+def delivery():
+  lista = (
+      Pedido.query.filter(
+          Pedido.colmado_id == current_user.colmado_id,
+          Pedido.estado != "entregado",
+      )
+      .order_by(Pedido.fecha.desc())
+      .all()
+  )
+
+  def fila(p):
+    repartidor = Usuario.query.get(p.repartidor_id) if p.repartidor_id else None
+    acciones = f'<a class="btn-link" href="{url_for("delivery_detalle", pedido_id=p.id)}">Ver / Actualizar</a>'
+    return f"""<tr>
+                <td>#{p.id}</td>
+                <td>{p.nombre_cliente}</td>
+                <td>{p.direccion}</td>
+                <td>{repartidor.nombre if repartidor else '<em>Sin asignar</em>'}</td>
+                <td>{_pill_estado_pedido(p.estado)}</td>
+                <td>{acciones}</td>
+            </tr>"""
+
+  filas = "".join(fila(p) for p in lista) or "<tr><td colspan='6'>No hay pedidos activos.</td></tr>"
+
+  cuerpo = f"""
+        <h2>🛵 Delivery</h2>
+        <table>
+            <tr><th>#</th><th>Cliente</th><th>Dirección</th><th>Repartidor</th><th>Estado</th><th></th></tr>
+            {filas}
+        </table>
+        <br><a class="btn" href="{url_for('nuevo_pedido')}">+ Crear Pedido</a>
+        <a class="btn" href="{url_for('delivery_historial')}" style="background:var(--gris);">📜 Historial</a>
+        <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
+    """
+  return render_page("Delivery", cuerpo)
+
+
+@app.route("/delivery/nuevo", methods=["GET", "POST"])
+@login_required
+def nuevo_pedido():
+  if request.method == "POST":
+    nombre_cliente = request.form.get("nombre_cliente", "").strip()
+    telefono_cliente = request.form.get("telefono_cliente", "").strip()
+    direccion = request.form.get("direccion", "").strip()
+    nota = request.form.get("nota", "").strip()
+
+    if not nombre_cliente or not direccion:
+      flash("Nombre del cliente y dirección son obligatorios.", "danger")
+      return redirect(url_for("nuevo_pedido"))
+
+    pedido = Pedido(
+        colmado_id=current_user.colmado_id,
+        nombre_cliente=nombre_cliente,
+        telefono_cliente=telefono_cliente,
+        direccion=direccion,
+        nota=nota,
+        estado="pendiente",
+    )
+    db.session.add(pedido)
+    db.session.commit()
+    flash("Pedido creado. Ahora puedes asignarle un repartidor.", "success")
+    return redirect(url_for("delivery_detalle", pedido_id=pedido.id))
+
+  cuerpo = f"""
+        <h2>➕ Crear Pedido</h2>
+        <form method="POST">
+            <input type="text" name="nombre_cliente" placeholder="Nombre del cliente" required>
+            <input type="text" name="telefono_cliente" placeholder="Teléfono del cliente">
+            <input type="text" name="direccion" placeholder="Dirección de entrega" required>
+            <input type="text" name="nota" placeholder="Nota (ej. productos, referencia)">
+            <button type="submit">Crear Pedido</button>
+        </form>
+        <br><a class="btn-link volver" href="{url_for('delivery')}">← Volver</a>
+    """
+  return render_page("Nuevo Pedido", cuerpo)
+
+
+@app.route("/delivery/<int:pedido_id>")
+@login_required
+def delivery_detalle(pedido_id):
+  pedido = Pedido.query.filter_by(
+      id=pedido_id, colmado_id=current_user.colmado_id
+  ).first_or_404()
+
+  repartidor = Usuario.query.get(pedido.repartidor_id) if pedido.repartidor_id else None
+  empleados_activos = Usuario.query.filter(
+      Usuario.colmado_id == current_user.colmado_id,
+      Usuario.activo == True,  # noqa: E712
+      Usuario.rol != "dueno",
+  ).all()
+
+  opciones_repartidor = "".join(
+      f'<option value="{u.id}" {"selected" if pedido.repartidor_id == u.id else ""}>{u.nombre}</option>'
+      for u in empleados_activos
+  ) or '<option value="">No hay empleados activos</option>'
+
+  import urllib.parse
+  whatsapp_url = ""
+  if pedido.telefono_cliente:
+    texto = f"Hola {pedido.nombre_cliente}, tu pedido #{pedido.id} está {pedido.estado.replace('_', ' ')}."
+    whatsapp_url = f"https://wa.me/{pedido.telefono_cliente}?text={urllib.parse.quote(texto)}"
+
+  botones_estado = ""
+  if pedido.estado == "pendiente":
+    botones_estado = f'<a class="btn" href="{url_for("delivery_estado", pedido_id=pedido.id, nuevo_estado="en_camino")}">🛵 Marcar En Camino</a>'
+  elif pedido.estado == "en_camino":
+    botones_estado = f'<a class="btn" href="{url_for("delivery_estado", pedido_id=pedido.id, nuevo_estado="entregado")}">✅ Marcar Entregado</a>'
+
+  cuerpo = f"""
+        <h2>Pedido #{pedido.id}</h2>
+        <p>{_pill_estado_pedido(pedido.estado)}</p>
+        <p><strong>Cliente:</strong> {pedido.nombre_cliente}{' · ' + pedido.telefono_cliente if pedido.telefono_cliente else ''}</p>
+        <p><strong>Dirección:</strong> {pedido.direccion}</p>
+        {f'<p><strong>Nota:</strong> {pedido.nota}</p>' if pedido.nota else ''}
+        <p><strong>Repartidor:</strong> {repartidor.nombre if repartidor else '<em>Sin asignar</em>'}</p>
+
+        <h3>Asignar Repartidor</h3>
+        <form method="POST" action="{url_for('delivery_asignar', pedido_id=pedido.id)}">
+            <select name="repartidor_id">
+                <option value="">Sin asignar</option>
+                {opciones_repartidor}
+            </select>
+            <button type="submit">Guardar</button>
+        </form>
+
+        <br>
+        {botones_estado}
+        {f'<a class="btn" href="{whatsapp_url}" target="_blank" style="background:#25D366;">📲 Contactar por WhatsApp</a>' if whatsapp_url else ''}
+
+        <br><br><a class="btn-link volver" href="{url_for('delivery')}">← Volver a Delivery</a>
+    """
+  return render_page(f"Pedido #{pedido.id}", cuerpo)
+
+
+@app.route("/delivery/<int:pedido_id>/asignar", methods=["POST"])
+@login_required
+def delivery_asignar(pedido_id):
+  pedido = Pedido.query.filter_by(
+      id=pedido_id, colmado_id=current_user.colmado_id
+  ).first_or_404()
+
+  repartidor_id = request.form.get("repartidor_id")
+  pedido.repartidor_id = int(repartidor_id) if repartidor_id else None
+  db.session.commit()
+  flash("Repartidor actualizado.", "success")
+  return redirect(url_for("delivery_detalle", pedido_id=pedido.id))
+
+
+@app.route("/delivery/<int:pedido_id>/estado/<nuevo_estado>")
+@login_required
+def delivery_estado(pedido_id, nuevo_estado):
+  if nuevo_estado not in ("pendiente", "en_camino", "entregado"):
+    flash("Estado no reconocido.", "danger")
+    return redirect(url_for("delivery"))
+
+  pedido = Pedido.query.filter_by(
+      id=pedido_id, colmado_id=current_user.colmado_id
+  ).first_or_404()
+
+  pedido.estado = nuevo_estado
+  if nuevo_estado == "entregado":
+    pedido.fecha_entregado = datetime.utcnow()
+  db.session.commit()
+  flash(f"Pedido #{pedido.id} marcado como {nuevo_estado.replace('_', ' ')}.", "success")
+  return redirect(url_for("delivery_detalle", pedido_id=pedido.id))
+
+
+@app.route("/delivery/historial")
+@login_required
+def delivery_historial():
+  lista = (
+      Pedido.query.filter_by(colmado_id=current_user.colmado_id, estado="entregado")
+      .order_by(Pedido.fecha_entregado.desc())
+      .limit(50)
+      .all()
+  )
+
+  def fila(p):
+    repartidor = Usuario.query.get(p.repartidor_id) if p.repartidor_id else None
+    entregado = p.fecha_entregado.strftime('%d/%m/%Y %H:%M') if p.fecha_entregado else '-'
+    return f"""<tr>
+                <td>#{p.id}</td>
+                <td>{p.nombre_cliente}</td>
+                <td>{repartidor.nombre if repartidor else '-'}</td>
+                <td>{entregado}</td>
+            </tr>"""
+
+  filas = "".join(fila(p) for p in lista) or "<tr><td colspan='4'>Aún no hay entregas completadas.</td></tr>"
+
+  cuerpo = f"""
+        <h2>📜 Historial de Deliveries</h2>
+        <table>
+            <tr><th>#</th><th>Cliente</th><th>Repartidor</th><th>Entregado</th></tr>
+            {filas}
+        </table>
+        <br><a class="btn-link volver" href="{url_for('delivery')}">← Volver</a>
+    """
+  return render_page("Historial de Delivery", cuerpo)
 
 
 # --- EMPLEADOS (solo dueño: alta/baja/permisos NUNCA se delegan) ---

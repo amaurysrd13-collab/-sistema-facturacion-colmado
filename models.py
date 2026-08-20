@@ -165,6 +165,53 @@ class Fiado(db.Model):
     saldado = db.Column(db.Boolean, default=False)
 
 
+class MovimientoCaja(db.Model):
+    """Entradas y salidas de dinero de la caja, fuera de las ventas normales.
+    Ej: entrada de capital, salida para comprar algo, pago de un gasto, etc."""
+    id = db.Column(db.Integer, primary_key=True)
+    colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
+
+    tipo = db.Column(db.String(10), nullable=False)  # 'entrada' o 'salida'
+    monto = db.Column(db.Float, nullable=False)
+    motivo = db.Column(db.String(200), nullable=False)
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class CuadreCaja(db.Model):
+    """Cuadre de caja: compara lo que el sistema espera en efectivo contra lo
+    que el usuario contó físicamente, y guarda la diferencia."""
+    id = db.Column(db.Integer, primary_key=True)
+    colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
+
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+    efectivo_esperado = db.Column(db.Float, nullable=False)
+    efectivo_contado = db.Column(db.Float, nullable=False)
+    diferencia = db.Column(db.Float, nullable=False)  # contado - esperado
+    nota = db.Column(db.String(200))
+
+
+class Pedido(db.Model):
+    """Pedido de delivery. Puede ligarse a una venta ya registrada, o crearse
+    aparte y cobrarse al momento de la entrega."""
+    id = db.Column(db.Integer, primary_key=True)
+    colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=False)
+    venta_id = db.Column(db.Integer, db.ForeignKey('venta.id'), nullable=True)
+    repartidor_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=True)
+
+    nombre_cliente = db.Column(db.String(100), nullable=False)
+    telefono_cliente = db.Column(db.String(20))
+    direccion = db.Column(db.String(250), nullable=False)
+    nota = db.Column(db.String(250))
+
+    # Estados: 'pendiente', 'en_camino', 'entregado'
+    estado = db.Column(db.String(20), nullable=False, default='pendiente')
+
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+    fecha_entregado = db.Column(db.DateTime, nullable=True)
+
+
 class PagoMembresia(db.Model):
     """Historial de pagos/renovaciones de membresía por colmado (lo maneja el creador del sistema)."""
     id = db.Column(db.Integer, primary_key=True)

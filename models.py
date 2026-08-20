@@ -172,7 +172,8 @@ class Fiado(db.Model):
 
 class MovimientoCaja(db.Model):
     """Entradas y salidas de dinero de la caja, fuera de las ventas normales.
-    Ej: entrada de capital, salida para comprar algo, pago de un gasto, etc."""
+    Ej: entrada de capital, salida para comprar algo, pago de un gasto, etc.
+    También los abonos de fiado se registran aquí como tipo 'entrada'."""
     id = db.Column(db.Integer, primary_key=True)
     colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=False)
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
@@ -184,7 +185,9 @@ class MovimientoCaja(db.Model):
 
 
 class CuadreCaja(db.Model):
-    """Cuadre de caja: compara lo que el sistema espera en efectivo contra lo
+    """(Histórica, ya no se usa desde la Fase 1 — reemplazada por CierreCaja.
+    Se deja aquí sin borrar para no perder datos viejos ni romper la tabla existente.)
+    Cuadre de caja: compara lo que el sistema espera en efectivo contra lo
     que el usuario contó físicamente, y guarda la diferencia."""
     id = db.Column(db.Integer, primary_key=True)
     colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=False)
@@ -195,6 +198,27 @@ class CuadreCaja(db.Model):
     efectivo_contado = db.Column(db.Float, nullable=False)
     diferencia = db.Column(db.Float, nullable=False)  # contado - esperado
     nota = db.Column(db.String(200))
+
+
+class CierreCaja(db.Model):
+    """NUEVO — Fase 1. Cierre formal del día: una sola vez por colmado y por
+    fecha (ver UniqueConstraint). Mientras exista un registro aquí para hoy,
+    el sistema bloquea nuevas ventas hasta que el dueño lo reabra."""
+    __tablename__ = "cierre_caja"
+
+    id = db.Column(db.Integer, primary_key=True)
+    colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=False)
+    fecha = db.Column(db.Date, nullable=False)  # el día calendario que se está cerrando
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
+    efectivo_esperado = db.Column(db.Float, nullable=False)
+    efectivo_contado = db.Column(db.Float, nullable=False)
+    diferencia = db.Column(db.Float, nullable=False)
+    nota = db.Column(db.Text)
+    fecha_cierre = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('colmado_id', 'fecha', name='uq_cierre_colmado_fecha'),
+    )
 
 
 class Pedido(db.Model):

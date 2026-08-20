@@ -11,6 +11,7 @@ from flask_login import (
 )
 from sqlalchemy import func
 from models import (
+    CierreCaja,  # <-- NUEVO: agregado para la Fase 1 (cierre de caja)
     Colmado,
     CuadreCaja,
     DetalleVenta,
@@ -612,6 +613,11 @@ def nueva_venta():
   lista = Producto.query.filter_by(colmado_id=current_user.colmado_id).all()
 
   if request.method == "POST":
+    # NUEVO (Fase 1): no se puede vender si la caja del día ya está cerrada
+    if _dia_cerrado(current_user.colmado_id):
+      flash("La caja de hoy ya está cerrada. No se pueden registrar más ventas.", "danger")
+      return redirect(url_for("dashboard"))
+
     es_fiado = request.form.get("es_fiado") == "on"
     nombre_cliente = request.form.get("nombre_cliente", "").strip()
     telefono_cliente = request.form.get("telefono_cliente", "").strip()
@@ -619,6 +625,11 @@ def nueva_venta():
 
     if es_fiado and not nombre_cliente:
       flash("Para una venta fiada necesitas el nombre del cliente.", "danger")
+      return redirect(url_for("nueva_venta"))
+
+    # NUEVO (Fase 1): si no es fiada, es obligatorio decir cuánto efectivo se recibió
+    if not es_fiado and not efectivo_recibido_str:
+      flash("Debes indicar el efectivo recibido para una venta que no es fiada.", "danger")
       return redirect(url_for("nueva_venta"))
 
     items = []
@@ -728,7 +739,7 @@ def nueva_venta():
 
             <div id="bloque-efectivo">
                 <input type="number" step="0.01" name="efectivo_recibido" id="efectivo_recibido"
-                       placeholder="Efectivo recibido del cliente (opcional)">
+                       placeholder="Efectivo recibido del cliente">
                 <p id="texto-cambio" style="color:var(--gris); font-size:0.9rem; margin:0;"></p>
             </div>
 
@@ -966,6 +977,17 @@ def abonar_fiado(fiado_id):
     if fiado.monto_pagado >= fiado.monto_total:
       fiado.saldado = True
 
+    # NUEVO (Fase 1): el abono de fiado ahora también cuenta como
+    # entrada de dinero en caja, para que se refleje en el cuadre del día.
+    movimiento = MovimientoCaja(
+        colmado_id=current_user.colmado_id,
+        usuario_id=current_user.id,
+        tipo="entrada",
+        monto=monto,
+        motivo=f"Abono de fiado — {fiado.nombre_cliente}",
+    )
+    db.session.add(movimiento)
+
     db.session.commit()
     flash("Abono registrado correctamente.", "success")
     return redirect(url_for("fiados"))
@@ -1074,8 +1096,16 @@ def _rango_hoy():
   return datetime(hoy.year, hoy.month, hoy.day)
 
 
+def _dia_cerrado(colmado_id):
+  """NUEVO (Fase 1): true si ya existe un CierreCaja para hoy en este colmado."""
+  hoy = datetime.utcnow().date()
+  return CierreCaja.query.filter_by(colmado_id=colmado_id, fecha=hoy).first() is not None
+
+
 def _efectivo_esperado_hoy(colmado_id):
-  """Ventas no fiadas de hoy (se asumen en efectivo) + entradas - salidas de hoy."""
+  """Ventas no fiadas de hoy (se asumen en efectivo) + entradas - salidas de hoy.
+  Nota: los abonos de fiado ya entran aquí porque se registran como
+  MovimientoCaja tipo 'entrada' (ver abonar_fiado)."""
   inicio_hoy = _rango_hoy()
 
   total_ventas_efectivo = (
@@ -1115,15 +1145,28 @@ def _efectivo_esperado_hoy(colmado_id):
 @login_required
 @requiere_permiso("caja_completa")
 def caja():
+  # NUEVO (Fase 1): muestra aviso si la caja de hoy ya cerró, y oculta
+  # el botón de "Cerrar Caja" cuando ya no aplica.
+  cerrada = _dia_cerrado(current_user.colmado_id)
   esperado_hoy = _efectivo_esperado_hoy(current_user.colmado_id)
+
+  aviso_cierre = ""
+  if cerrada:
+    boton_reabrir = (
+        f'<a class="btn-link" href="{url_for("caja_reabrir")}">Reabrir caja (solo dueño)</a>'
+        if current_user.rol == "dueno" else ""
+    )
+    aviso_cierre = f'<div class="flash flash-danger">🔒 La caja de hoy ya está cerrada. {boton_reabrir}</div>'
+
   cuerpo = f"""
         <h2>💰 Caja</h2>
-        <p style="color:var(--gris);">Efectivo esperado hoy (ventas en efectivo + entradas - salidas): <strong>RD$ {esperado_hoy:.2f}</strong></p>
+        {aviso_cierre}
+        <p style="color:var(--gris);">Efectivo esperado hoy (ventas efectivo + abonos fiado + entradas - salidas): <strong>RD$ {esperado_hoy:.2f}</strong></p>
         <ul class="menu">
             <li><a href="{url_for('caja_entrada')}">➕ Entrada de Dinero</a></li>
             <li><a href="{url_for('caja_salida')}">➖ Salida de Dinero</a></li>
             <li><a href="{url_for('caja_movimientos')}">📜 Movimientos de Hoy</a></li>
-            <li><a href="{url_for('caja_cuadre')}">🧮 Cuadre de Caja</a></li>
+            {'' if cerrada else f'<li><a href="{url_for("caja_cerrar")}">🔒 Cerrar Caja del Día</a></li>'}
             <li><a href="{url_for('caja_diferencias')}">⚠️ Diferencias de Caja</a></li>
         </ul>
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
@@ -1261,63 +1304,88 @@ def caja_movimientos():
   return render_page("Movimientos de Caja", cuerpo)
 
 
-@app.route("/caja/cuadre", methods=["GET", "POST"])
+@app.route("/caja/cerrar", methods=["GET", "POST"])
 @login_required
 @requiere_permiso("caja_completa")
-def caja_cuadre():
+def caja_cerrar():
+  """NUEVO (Fase 1): reemplaza a caja_cuadre. Cierra formalmente el día:
+  guarda el cuadre en CierreCaja y bloquea nuevas ventas hasta mañana
+  (o hasta que el dueño reabra manualmente)."""
+  if _dia_cerrado(current_user.colmado_id):
+    flash("La caja de hoy ya está cerrada.", "danger")
+    return redirect(url_for("caja"))
+
   esperado = _efectivo_esperado_hoy(current_user.colmado_id)
 
   if request.method == "POST":
     contado_str = request.form.get("contado", "0")
     nota = request.form.get("nota", "").strip()
-
     try:
       contado = float(contado_str)
     except ValueError:
       flash("El monto contado no es válido.", "danger")
-      return redirect(url_for("caja_cuadre"))
+      return redirect(url_for("caja_cerrar"))
 
     diferencia = contado - esperado
-
-    cuadre = CuadreCaja(
+    cierre = CierreCaja(
         colmado_id=current_user.colmado_id,
+        fecha=datetime.utcnow().date(),
         usuario_id=current_user.id,
         efectivo_esperado=esperado,
         efectivo_contado=contado,
         diferencia=diferencia,
         nota=nota,
     )
-    db.session.add(cuadre)
+    db.session.add(cierre)
     db.session.commit()
 
     if abs(diferencia) < 0.01:
-      flash("¡Cuadre perfecto! No hay diferencia.", "success")
+      flash("🔒 Caja cerrada. ¡Cuadre perfecto!", "success")
     elif diferencia > 0:
-      flash(f"Cuadre registrado. Sobran RD$ {diferencia:.2f}.", "danger")
+      flash(f"🔒 Caja cerrada. Sobraron RD$ {diferencia:.2f}.", "danger")
     else:
-      flash(f"Cuadre registrado. Faltan RD$ {abs(diferencia):.2f}.", "danger")
+      flash(f"🔒 Caja cerrada. Faltaron RD$ {abs(diferencia):.2f}.", "danger")
     return redirect(url_for("caja"))
 
   cuerpo = f"""
-        <h2>🧮 Cuadre de Caja</h2>
-        <p>Efectivo que el sistema espera hoy: <strong>RD$ {esperado:.2f}</strong></p>
+        <h2>🔒 Cerrar Caja del Día</h2>
+        <p style="color:var(--gris);">Al cerrar, no se podrán registrar más ventas hoy. Solo el dueño puede reabrir la caja si te equivocas.</p>
+        <p>Efectivo que el sistema espera: <strong>RD$ {esperado:.2f}</strong></p>
         <form method="POST">
             <input type="number" step="0.01" name="contado" placeholder="Efectivo contado físicamente" required>
             <input type="text" name="nota" placeholder="Nota (opcional)">
-            <button type="submit">Registrar Cuadre</button>
+            <button type="submit">Cerrar Caja</button>
         </form>
         <br><a class="btn-link volver" href="{url_for('caja')}">← Volver</a>
     """
-  return render_page("Cuadre de Caja", cuerpo)
+  return render_page("Cerrar Caja", cuerpo)
+
+
+@app.route("/caja/reabrir")
+@login_required
+@solo_dueno
+def caja_reabrir():
+  """NUEVO (Fase 1): solo el dueño puede deshacer el cierre de hoy."""
+  hoy = datetime.utcnow().date()
+  cierre = CierreCaja.query.filter_by(colmado_id=current_user.colmado_id, fecha=hoy).first()
+  if cierre:
+    db.session.delete(cierre)
+    db.session.commit()
+    flash("Caja reabierta para hoy.", "success")
+  else:
+    flash("La caja de hoy no está cerrada.", "danger")
+  return redirect(url_for("caja"))
 
 
 @app.route("/caja/diferencias")
 @login_required
 @requiere_permiso("caja_completa")
 def caja_diferencias():
+  """Ahora muestra el historial de cierres formales (CierreCaja) en vez
+  de los cuadres antiguos, ya que caja_cuadre fue reemplazada por caja_cerrar."""
   lista = (
-      CuadreCaja.query.filter_by(colmado_id=current_user.colmado_id)
-      .order_by(CuadreCaja.fecha.desc())
+      CierreCaja.query.filter_by(colmado_id=current_user.colmado_id)
+      .order_by(CierreCaja.fecha.desc())
       .limit(30)
       .all()
   )
@@ -1329,20 +1397,20 @@ def caja_diferencias():
     else:
       pill = f'<span class="pill pill-pend">{"Sobran" if c.diferencia > 0 else "Faltan"} RD$ {abs(c.diferencia):.2f}</span>'
     return f"""<tr>
-                <td>{c.fecha.strftime('%d/%m/%Y %H:%M')}</td>
+                <td>{c.fecha.strftime('%d/%m/%Y')}</td>
                 <td>RD$ {c.efectivo_esperado:.2f}</td>
                 <td>RD$ {c.efectivo_contado:.2f}</td>
                 <td>{pill}</td>
                 <td>{usuario_c.nombre if usuario_c else '-'}</td>
             </tr>"""
 
-  filas = "".join(fila(c) for c in lista) or "<tr><td colspan='5'>Aún no hay cuadres registrados.</td></tr>"
+  filas = "".join(fila(c) for c in lista) or "<tr><td colspan='5'>Aún no hay cierres registrados.</td></tr>"
 
   cuerpo = f"""
         <h2>⚠️ Diferencias de Caja</h2>
-        <p style="color:var(--gris);">Últimos 30 cuadres registrados.</p>
+        <p style="color:var(--gris);">Últimos 30 cierres de caja registrados.</p>
         <table>
-            <tr><th>Fecha</th><th>Esperado</th><th>Contado</th><th>Resultado</th><th>Registrado por</th></tr>
+            <tr><th>Fecha</th><th>Esperado</th><th>Contado</th><th>Resultado</th><th>Cerrado por</th></tr>
             {filas}
         </table>
         <br><a class="btn-link volver" href="{url_for('caja')}">← Volver</a>

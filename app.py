@@ -615,6 +615,7 @@ def nueva_venta():
     es_fiado = request.form.get("es_fiado") == "on"
     nombre_cliente = request.form.get("nombre_cliente", "").strip()
     telefono_cliente = request.form.get("telefono_cliente", "").strip()
+    efectivo_recibido_str = request.form.get("efectivo_recibido", "").strip()
 
     if es_fiado and not nombre_cliente:
       flash("Para una venta fiada necesitas el nombre del cliente.", "danger")
@@ -643,11 +644,32 @@ def nueva_venta():
       flash("Debes seleccionar al menos un producto con cantidad.", "danger")
       return redirect(url_for("nueva_venta"))
 
+    # Dinero recibido y cambio: solo tiene sentido para ventas en efectivo (no fiadas).
+    efectivo_recibido = None
+    cambio_devuelto = None
+    if not es_fiado and efectivo_recibido_str:
+      try:
+        efectivo_recibido = float(efectivo_recibido_str)
+      except ValueError:
+        flash("El monto recibido no es válido.", "danger")
+        return redirect(url_for("nueva_venta"))
+
+      if efectivo_recibido < total:
+        flash(
+            f"El efectivo recibido (RD$ {efectivo_recibido:.2f}) es menor al total (RD$ {total:.2f}).",
+            "danger",
+        )
+        return redirect(url_for("nueva_venta"))
+
+      cambio_devuelto = efectivo_recibido - total
+
     venta = Venta(
         colmado_id=current_user.colmado_id,
         usuario_id=current_user.id,
         total=total,
         es_fiado=es_fiado,
+        efectivo_recibido=efectivo_recibido,
+        cambio_devuelto=cambio_devuelto,
     )
     db.session.add(venta)
     db.session.flush()
@@ -676,7 +698,11 @@ def nueva_venta():
       db.session.add(fiado)
 
     db.session.commit()
-    flash(f"Venta registrada. Total: RD$ {total:.2f}", "success")
+
+    mensaje = f"Venta registrada. Total: RD$ {total:.2f}"
+    if cambio_devuelto is not None:
+      mensaje += f" · Cambio a devolver: RD$ {cambio_devuelto:.2f}"
+    flash(mensaje, "success")
     return redirect(url_for("recibo", venta_id=venta.id))
 
   filas = "".join(
@@ -691,17 +717,74 @@ def nueva_venta():
 
   cuerpo = f"""
         <h2>🧾 Nueva Venta</h2>
-        <form method="POST">
+        <form method="POST" id="form-venta">
             <table>
                 <tr><th>Producto</th><th>Precio</th><th>Existencia</th><th>Cant. a vender</th></tr>
                 {filas}
             </table>
-            <label><input type="checkbox" name="es_fiado"> Es venta fiada (a crédito)</label>
+            <label><input type="checkbox" name="es_fiado" id="es_fiado"> Es venta fiada (a crédito)</label>
             <input type="text" name="nombre_cliente" placeholder="Nombre del cliente (si es fiado)">
             <input type="text" name="telefono_cliente" placeholder="Teléfono del cliente (opcional)">
+
+            <div id="bloque-efectivo">
+                <input type="number" step="0.01" name="efectivo_recibido" id="efectivo_recibido"
+                       placeholder="Efectivo recibido del cliente (opcional)">
+                <p id="texto-cambio" style="color:var(--gris); font-size:0.9rem; margin:0;"></p>
+            </div>
+
             <button type="submit">Registrar Venta</button>
         </form>
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
+
+        <script>
+            const precios = {{
+                {",".join(f'"{p.id}": {p.precio}' for p in lista)}
+            }};
+
+            function calcularTotal() {{
+                let total = 0;
+                for (const id in precios) {{
+                    const input = document.querySelector(`[name="cantidad_${{id}}"]`);
+                    const cantidad = parseInt(input.value || "0", 10);
+                    total += precios[id] * cantidad;
+                }}
+                return total;
+            }}
+
+            function actualizarCambio() {{
+                const total = calcularTotal();
+                const recibidoInput = document.getElementById("efectivo_recibido");
+                const recibido = parseFloat(recibidoInput.value || "0");
+                const texto = document.getElementById("texto-cambio");
+
+                if (!recibidoInput.value) {{
+                    texto.textContent = `Total de la venta: RD$ ${{total.toFixed(2)}}`;
+                    return;
+                }}
+
+                const cambio = recibido - total;
+                if (cambio < 0) {{
+                    texto.textContent = `Total: RD$ ${{total.toFixed(2)}} · Falta RD$ ${{Math.abs(cambio).toFixed(2)}}`;
+                    texto.style.color = "var(--rojo)";
+                }} else {{
+                    texto.textContent = `Total: RD$ ${{total.toFixed(2)}} · Cambio a devolver: RD$ ${{cambio.toFixed(2)}}`;
+                    texto.style.color = "var(--verde-oscuro)";
+                }}
+            }}
+
+            function actualizarVisibilidadEfectivo() {{
+                const esFiado = document.getElementById("es_fiado").checked;
+                document.getElementById("bloque-efectivo").style.display = esFiado ? "none" : "block";
+                if (esFiado) {{
+                    document.getElementById("efectivo_recibido").value = "";
+                }}
+            }}
+
+            document.getElementById("form-venta").addEventListener("input", actualizarCambio);
+            document.getElementById("es_fiado").addEventListener("change", actualizarVisibilidadEfectivo);
+            actualizarCambio();
+            actualizarVisibilidadEfectivo();
+        </script>
     """
   return render_page("Nueva Venta", cuerpo)
 
@@ -767,6 +850,15 @@ def recibo(venta_id):
         </p>
     """
 
+  linea_efectivo = ""
+  if not venta.es_fiado and venta.efectivo_recibido is not None:
+    linea_efectivo = f"""
+        <table style="margin-top:8px;">
+            <tr><td>Recibido</td><td style="text-align:right">RD$ {venta.efectivo_recibido:.2f}</td></tr>
+            <tr><td>Cambio devuelto</td><td style="text-align:right">RD$ {venta.cambio_devuelto:.2f}</td></tr>
+        </table>
+    """
+
   texto_whatsapp = f"Recibo {colmado.nombre} - Venta #{venta.id} - Total RD$ {venta.total:.2f} - {venta.fecha.strftime('%d/%m/%Y %H:%M')}"
   import urllib.parse
   whatsapp_url = f"https://wa.me/?text={urllib.parse.quote(texto_whatsapp)}"
@@ -782,6 +874,7 @@ def recibo(venta_id):
                 {filas_detalle}
             </table>
             <h3 style="text-align:right; margin-top:16px;">Total: RD$ {venta.total:.2f}</h3>
+            {linea_efectivo}
             <p style="text-align:center; color:var(--gris); font-size:0.85rem;">¡Gracias por su compra!</p>
         </div>
 

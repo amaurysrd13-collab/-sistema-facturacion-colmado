@@ -137,6 +137,11 @@ class Venta(db.Model):
     # Si la venta fue fiada (a crédito) o pagada de una vez
     es_fiado = db.Column(db.Boolean, default=False)
 
+    # Dinero recibido en efectivo y cambio devuelto (solo aplica a ventas NO fiadas).
+    # Si el cajero no registra el efectivo recibido, quedan en None.
+    efectivo_recibido = db.Column(db.Float, nullable=True)
+    cambio_devuelto = db.Column(db.Float, nullable=True)
+
     detalles = db.relationship('DetalleVenta', backref='venta', lazy=True)
 
 

@@ -10,7 +10,7 @@ from flask_login import (
     logout_user,
 )
 from sqlalchemy import func
-from models import Colmado, DetalleVenta, Fiado, PagoMembresia, Plan, Producto, Usuario, Venta, db
+from models import Colmado, DetalleVenta, Fiado, PagoMembresia, Plan, Producto, , Venta, db
 from werkzeug.security import check_password_hash, generate_password_hash
 
 # Carga las variables del archivo .env (ahí está tu DATABASE_URL)
@@ -41,7 +41,7 @@ login_manager.login_view = "login"
 
 @login_manager.user_loader
 def load_user(user_id):
-  return Usuario.query.get(int(user_id))
+  return .query.get(int(user_id))
 
 
 def solo_dueno(vista):
@@ -230,10 +230,10 @@ def registro_inicial():
   if request.method == "POST":
     nombre_colmado = request.form.get("nombre_colmado")
     nombre_dueno = request.form.get("nombre_dueno")
-    usuario = request.form.get("usuario")
+     = request.form.get("")
     clave = request.form.get("clave")
 
-    if not nombre_colmado or not nombre_dueno or not usuario or not clave:
+    if not nombre_colmado or not nombre_dueno or not  or not clave:
       flash("Todos los campos son obligatorios.", "danger")
       return redirect(url_for("registro_inicial"))
 
@@ -245,10 +245,10 @@ def registro_inicial():
     db.session.add(nuevo_colmado)
     db.session.commit()
 
-    nuevo_dueno = Usuario(
+    nuevo_dueno = (
         colmado_id=nuevo_colmado.id,
         nombre=nombre_dueno,
-        usuario=usuario,
+        =,
         clave_hash=generate_password_hash(clave),
         rol="dueno",
     )
@@ -268,7 +268,7 @@ def registro_inicial():
         <form method="POST">
             <input type="text" name="nombre_colmado" placeholder="Nombre del Colmado" required>
             <input type="text" name="nombre_dueno" placeholder="Nombre del Dueño" required>
-            <input type="text" name="usuario" placeholder="Usuario" required>
+            <input type="text" name="" placeholder="" required>
             <input type="password" name="clave" placeholder="Contraseña" required>
             <button type="submit">Registrar</button>
         </form>
@@ -283,9 +283,9 @@ def login():
     return redirect(url_for("registro_inicial"))
 
   if request.method == "POST":
-    user = Usuario.query.filter_by(usuario=request.form.get("usuario")).first()
+    user = .query.filter_by(=request.form.get("")).first()
     if user and not user.activo:
-      flash("Este usuario está desactivado. Contacta al dueño.", "danger")
+      flash("Este  está desactivado. Contacta al dueño.", "danger")
       return redirect(url_for("login"))
     if user and check_password_hash(user.clave_hash, request.form.get("clave")):
       login_user(user)
@@ -301,14 +301,14 @@ def login():
       if colmado and colmado.membresia_vence and colmado.membresia_vence < datetime.utcnow():
         return redirect(url_for("membresia_vencida"))
       return redirect(url_for("dashboard"))
-    flash("Usuario o clave incorrectos", "danger")
+    flash(" o clave incorrectos", "danger")
 
   return render_page(
       "Login",
       """
         <h2>Iniciar Sesión</h2>
         <form method="POST">
-            <input type="text" name="usuario" placeholder="Usuario" required>
+            <input type="text" name="" placeholder="" required>
             <input type="password" name="clave" placeholder="Contraseña" required>
             <button type="submit">Entrar</button>
         </form>
@@ -596,7 +596,7 @@ def nueva_venta():
 
     venta = Venta(
         colmado_id=current_user.colmado_id,
-        usuario_id=current_user.id,
+        _id=current_user.id,
         total=total,
         es_fiado=es_fiado,
     )
@@ -697,7 +697,7 @@ def recibo(venta_id):
 
   colmado = Colmado.query.get(current_user.colmado_id)
   detalles = DetalleVenta.query.filter_by(venta_id=venta.id).all()
-  cajero = Usuario.query.get(venta.usuario_id)
+  cajero = .query.get(venta._id)
   fiado = Fiado.query.filter_by(venta_id=venta.id).first() if venta.es_fiado else None
 
   filas_detalle = "".join(
@@ -923,14 +923,14 @@ def reportes():
 @login_required
 @solo_dueno
 def empleados():
-  lista = Usuario.query.filter_by(colmado_id=current_user.colmado_id).all()
+  lista = .query.filter_by(colmado_id=current_user.colmado_id).all()
   filas = "".join(
       f"""<tr>
                 <td>{u.nombre}</td>
-                <td>{u.usuario}</td>
+                <td>{u.}</td>
                 <td><span class="pill {'pill-ok' if u.rol == 'dueno' else 'pill-pend'}">{u.rol}</span></td>
                 <td><span class="pill {'pill-ok' if u.activo else 'pill-pend'}">{'Activo' if u.activo else 'Inactivo'}</span></td>
-                <td>{'' if u.id == current_user.id else f'<a class="btn-link" href="{url_for("alternar_empleado", usuario_id=u.id)}">{"Desactivar" if u.activo else "Activar"}</a>'}</td>
+                <td>{'' if u.id == current_user.id else f'<a class="btn-link" href="{url_for("alternar_empleado", _id=u.id)}">{"Desactivar" if u.activo else "Activar"}</a>'}</td>
             </tr>"""
       for u in lista
   )
@@ -938,7 +938,7 @@ def empleados():
   cuerpo = f"""
         <h2>👥 Empleados</h2>
         <table>
-            <tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th></th></tr>
+            <tr><th>Nombre</th><th></th><th>Rol</th><th>Estado</th><th></th></tr>
             {filas}
         </table>
         <br><a class="btn" href="{url_for('nuevo_empleado')}">+ Agregar Empleado</a>
@@ -953,22 +953,22 @@ def empleados():
 def nuevo_empleado():
   if request.method == "POST":
     nombre = request.form.get("nombre")
-    usuario = request.form.get("usuario")
+     = request.form.get("")
     clave = request.form.get("clave")
     rol = request.form.get("rol")
 
-    if not nombre or not usuario or not clave or rol not in ("cajero", "empleado"):
+    if not nombre or not  or not clave or rol not in ("cajero", "empleado"):
       flash("Todos los campos son obligatorios.", "danger")
       return redirect(url_for("nuevo_empleado"))
 
-    if Usuario.query.filter_by(usuario=usuario).first():
-      flash("Ese usuario ya existe, elige otro.", "danger")
+    if .query.filter_by(=).first():
+      flash("Ese  ya existe, elige otro.", "danger")
       return redirect(url_for("nuevo_empleado"))
 
-    nuevo = Usuario(
+    nuevo = (
         colmado_id=current_user.colmado_id,
         nombre=nombre,
-        usuario=usuario,
+        =,
         clave_hash=generate_password_hash(clave),
         rol=rol,
     )
@@ -981,7 +981,7 @@ def nuevo_empleado():
         <h2>➕ Nuevo Empleado</h2>
         <form method="POST">
             <input type="text" name="nombre" placeholder="Nombre completo" required>
-            <input type="text" name="usuario" placeholder="Usuario para iniciar sesión" required>
+            <input type="text" name="" placeholder=" para iniciar sesión" required>
             <input type="password" name="clave" placeholder="Contraseña" required>
             <label><input type="radio" name="rol" value="cajero" checked> Cajero (vender y consultar)</label>
             <label><input type="radio" name="rol" value="empleado"> Empleado básico</label>
@@ -992,26 +992,26 @@ def nuevo_empleado():
   return render_page("Nuevo Empleado", cuerpo)
 
 
-@app.route("/empleados/<int:usuario_id>/alternar")
+@app.route("/empleados/<int:_id>/alternar")
 @login_required
 @solo_dueno
-def alternar_empleado(usuario_id):
-  usuario_obj = Usuario.query.filter_by(
-      id=usuario_id, colmado_id=current_user.colmado_id
+def alternar_empleado(_id):
+  _obj = .query.filter_by(
+      id=_id, colmado_id=current_user.colmado_id
   ).first_or_404()
 
-  if usuario_obj.id == current_user.id:
+  if _obj.id == current_user.id:
     flash("No puedes desactivar tu propia cuenta.", "danger")
     return redirect(url_for("empleados"))
 
-  usuario_obj.activo = not usuario_obj.activo
+  _obj.activo = not _obj.activo
   db.session.commit()
   flash("Estado del empleado actualizado.", "success")
   return redirect(url_for("empleados"))
 
 
 # --- SUPER-ADMIN (tú, el creador del sistema) ---
-# Entra por el mismo /login de siempre, con un usuario que tenga rol='superadmin'.
+# Entra por el mismo /login de siempre, con un  que tenga rol='superadmin'.
 
 
 @app.route("/superadmin/panel")
@@ -1062,16 +1062,16 @@ def superadmin_nuevo_colmado():
   if request.method == "POST":
     nombre_colmado = request.form.get("nombre_colmado")
     nombre_dueno = request.form.get("nombre_dueno")
-    usuario = request.form.get("usuario")
+     = request.form.get("")
     clave = request.form.get("clave")
     plan_id = request.form.get("plan_id") or None
 
-    if not nombre_colmado or not nombre_dueno or not usuario or not clave:
+    if not nombre_colmado or not nombre_dueno or not  or not clave:
       flash("Todos los campos son obligatorios.", "danger")
       return redirect(url_for("superadmin_nuevo_colmado"))
 
-    if Usuario.query.filter_by(usuario=usuario).first():
-      flash("Ese usuario ya existe, elige otro.", "danger")
+    if .query.filter_by(=).first():
+      flash("Ese  ya existe, elige otro.", "danger")
       return redirect(url_for("superadmin_nuevo_colmado"))
 
     plan = Plan.query.get(int(plan_id)) if plan_id else None
@@ -1086,10 +1086,10 @@ def superadmin_nuevo_colmado():
     db.session.add(nuevo_colmado)
     db.session.commit()
 
-    nuevo_dueno = Usuario(
+    nuevo_dueno = (
         colmado_id=nuevo_colmado.id,
         nombre=nombre_dueno,
-        usuario=usuario,
+        =,
         clave_hash=generate_password_hash(clave),
         rol="dueno",
     )
@@ -1109,7 +1109,7 @@ def superadmin_nuevo_colmado():
         <form method="POST">
             <input type="text" name="nombre_colmado" placeholder="Nombre del Colmado" required>
             <input type="text" name="nombre_dueno" placeholder="Nombre del Dueño" required>
-            <input type="text" name="usuario" placeholder="Usuario del dueño" required>
+            <input type="text" name="" placeholder=" del dueño" required>
             <input type="password" name="clave" placeholder="Contraseña del dueño" required>
             <label>Plan: <select name="plan_id">{opciones_plan}</select></label>
             <button type="submit">Crear Colmado</button>
@@ -1124,17 +1124,17 @@ def superadmin_nuevo_colmado():
 @superadmin_requerido
 def superadmin_colmado(colmado_id):
   colmado = Colmado.query.get_or_404(colmado_id)
-  usuarios = Usuario.query.filter_by(colmado_id=colmado.id).all()
+  s = .query.filter_by(colmado_id=colmado.id).all()
   planes = Plan.query.filter_by(activo=True).all()
 
-  filas_usuarios = "".join(
+  filas_s = "".join(
       f"""<tr>
-                <td>{u.nombre}</td><td>{u.usuario}</td>
+                <td>{u.nombre}</td><td>{u.}</td>
                 <td><span class="pill pill-ok">{u.rol}</span></td>
                 <td><span class="pill {'pill-ok' if u.activo else 'pill-pend'}">{'Activo' if u.activo else 'Inactivo'}</span></td>
             </tr>"""
-      for u in usuarios
-  ) or "<tr><td colspan='4'>Sin usuarios.</td></tr>"
+      for u in s
+  ) or "<tr><td colspan='4'>Sin s.</td></tr>"
 
   opciones_plan = "".join(
       f'<option value="{p.id}" {"selected" if colmado.plan_id == p.id else ""}>{p.nombre} (RD$ {p.precio:.2f} / {p.duracion_dias} días)</option>'
@@ -1176,10 +1176,10 @@ def superadmin_colmado(colmado_id):
               onclick="return confirm('¿Eliminar el colmado {colmado.nombre}? Esto lo desactiva por completo.')">🗑️ Eliminar</a>
         </p>
 
-        <h3>Usuarios (dueño / empleados)</h3>
+        <h3>s (dueño / empleados)</h3>
         <table>
-            <tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th></tr>
-            {filas_usuarios}
+            <tr><th>Nombre</th><th></th><th>Rol</th><th>Estado</th></tr>
+            {filas_s}
         </table>
 
         <br><a class="btn-link volver" href="{url_for('superadmin_panel')}">← Volver al panel</a>

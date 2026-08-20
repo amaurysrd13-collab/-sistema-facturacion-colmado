@@ -10,7 +10,7 @@ from flask_login import (
     logout_user,
 )
 from sqlalchemy import func
-from models import Colmado, DetalleVenta, Fiado, PagoMembresia, Producto, Usuario, Venta, db
+from models import Colmado, DetalleVenta, Fiado, PagoMembresia, Plan, Producto, Usuario, Venta, db
 from werkzeug.security import check_password_hash, generate_password_hash
 
 # Carga las variables del archivo .env (ahí está tu DATABASE_URL)
@@ -30,9 +30,6 @@ if not database_url:
 app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "cambia-esto-despues")
-
-# Contraseña maestra para el panel de super-administrador (tú, el creador del sistema)
-SUPERADMIN_PASSWORD = os.environ.get("SUPERADMIN_PASSWORD", "cambia-esto-tambien")
 
 db.init_app(app)
 
@@ -59,6 +56,24 @@ def solo_dueno(vista):
     return vista(*args, **kwargs)
 
   return envoltura
+
+
+def superadmin_requerido(vista):
+  """Decorador: solo el rol 'superadmin' puede acceder a esta ruta."""
+  from functools import wraps
+
+  @wraps(vista)
+  def envoltura(*args, **kwargs):
+    if not current_user.is_authenticated or current_user.rol != "superadmin":
+      return redirect(url_for("login"))
+    return vista(*args, **kwargs)
+
+  return envoltura
+
+
+def estado_pill(estado):
+  colores = {"activo": "pill-ok", "suspendido": "pill-pend", "eliminado": "pill-pend"}
+  return f'<span class="pill {colores.get(estado, "pill-pend")}">{estado.capitalize()}</span>'
 
 
 # --- DISEÑO / PLANTILLA VISUAL ---
@@ -117,14 +132,14 @@ ESTILOS = """
   }
   .menu li a:hover { background: #d5ecdc; }
   form { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
-  input[type=text], input[type=password], input[type=number] {
+  input[type=text], input[type=password], input[type=number], input[type=date], select {
     padding: 10px 12px;
     border: 1px solid var(--borde);
     border-radius: 8px;
     font-size: 1rem;
     width: 100%;
   }
-  input:focus { outline: 2px solid var(--verde); border-color: var(--verde); }
+  input:focus, select:focus { outline: 2px solid var(--verde); border-color: var(--verde); }
   label { font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
   button, .btn {
     background: var(--verde);
@@ -169,9 +184,10 @@ def render_page(titulo, cuerpo_html, mostrar_nav=True):
 
   nav_html = ""
   if mostrar_nav and current_user.is_authenticated:
+    inicio = "superadmin_panel" if current_user.rol == "superadmin" else "dashboard"
     nav_html = f"""
         <div class="topbar">
-            <a class="brand" href="{url_for('dashboard')}">🏪 ColmaWeb</a>
+            <a class="brand" href="{url_for(inicio)}">🏪 ColmaWeb</a>
             <a class="salir" href="{url_for('logout')}">Salir</a>
         </div>
         """
@@ -221,15 +237,14 @@ def registro_inicial():
       flash("Todos los campos son obligatorios.", "danger")
       return redirect(url_for("registro_inicial"))
 
-    # Crear Colmado (con fecha de vencimiento a 30 días)
     nuevo_colmado = Colmado(
         nombre=nombre_colmado,
         membresia_vence=datetime.utcnow() + timedelta(days=30),
+        estado="activo",
     )
     db.session.add(nuevo_colmado)
     db.session.commit()
 
-    # Crear Dueño con contraseña encriptada
     nuevo_dueno = Usuario(
         colmado_id=nuevo_colmado.id,
         nombre=nombre_dueno,
@@ -274,8 +289,16 @@ def login():
       return redirect(url_for("login"))
     if user and check_password_hash(user.clave_hash, request.form.get("clave")):
       login_user(user)
+
+      if user.rol == "superadmin":
+        return redirect(url_for("superadmin_panel"))
+
       colmado = Colmado.query.get(user.colmado_id)
-      if colmado.membresia_vence and colmado.membresia_vence < datetime.utcnow():
+      if colmado and colmado.estado != "activo":
+        logout_user()
+        flash("Este colmado está suspendido. Contacta al administrador del sistema.", "danger")
+        return redirect(url_for("login"))
+      if colmado and colmado.membresia_vence and colmado.membresia_vence < datetime.utcnow():
         return redirect(url_for("membresia_vencida"))
       return redirect(url_for("dashboard"))
     flash("Usuario o clave incorrectos", "danger")
@@ -298,6 +321,8 @@ def login():
 def verificar_membresia():
   """Bloquea el acceso a todo excepto login/logout/membresía si venció el plan."""
   if not current_user.is_authenticated:
+    return
+  if current_user.rol == "superadmin":
     return
   if request.endpoint in ("membresia_vencida", "logout", "static") or (
       request.endpoint and request.endpoint.startswith("superadmin")
@@ -324,6 +349,9 @@ def membresia_vencida():
 @app.route("/dashboard")
 @login_required
 def dashboard():
+  if current_user.rol == "superadmin":
+    return redirect(url_for("superadmin_panel"))
+
   opciones_comunes = f"""
             <li><a href="{url_for('productos')}">📦 Ver Productos</a></li>
             <li><a href="{url_for('nueva_venta')}">🧾 Nueva Venta</a></li>
@@ -349,7 +377,6 @@ def dashboard():
       else:
         aviso_membresia = f'<p style="color:var(--gris); font-size:0.85rem;">Membresía activa hasta el {colmado.membresia_vence.strftime("%d/%m/%Y")} ({dias_restantes} días restantes)</p>'
 
-  # Aviso de productos con poca existencia (mismo umbral que en Reportes)
   UMBRAL_BAJO_STOCK = 10
   productos_bajo_stock = (
       Producto.query.filter(
@@ -544,7 +571,6 @@ def nueva_venta():
       flash("Para una venta fiada necesitas el nombre del cliente.", "danger")
       return redirect(url_for("nueva_venta"))
 
-    # Recolectar cantidades pedidas y validar existencia
     items = []
     total = 0.0
     for producto in lista:
@@ -568,7 +594,6 @@ def nueva_venta():
       flash("Debes seleccionar al menos un producto con cantidad.", "danger")
       return redirect(url_for("nueva_venta"))
 
-    # Crear la venta
     venta = Venta(
         colmado_id=current_user.colmado_id,
         usuario_id=current_user.id,
@@ -576,9 +601,8 @@ def nueva_venta():
         es_fiado=es_fiado,
     )
     db.session.add(venta)
-    db.session.flush()  # para obtener venta.id antes del commit final
+    db.session.flush()
 
-    # Crear detalle por cada producto y descontar inventario
     for producto, cantidad in items:
       detalle = DetalleVenta(
           venta_id=venta.id,
@@ -590,7 +614,6 @@ def nueva_venta():
       producto.cantidad -= cantidad
       producto.unidades_vendidas = (producto.unidades_vendidas or 0) + cantidad
 
-    # Si es fiado, crear el registro de deuda
     if es_fiado:
       fiado = Fiado(
           colmado_id=current_user.colmado_id,
@@ -695,7 +718,6 @@ def recibo(venta_id):
         </p>
     """
 
-  # Texto para compartir por WhatsApp
   texto_whatsapp = f"Recibo {colmado.nombre} - Venta #{venta.id} - Total RD$ {venta.total:.2f} - {venta.fecha.strftime('%d/%m/%Y %H:%M')}"
   import urllib.parse
   whatsapp_url = f"https://wa.me/?text={urllib.parse.quote(texto_whatsapp)}"
@@ -843,7 +865,6 @@ def reportes():
   total_semana = total_desde(inicio_semana)
   total_mes = total_desde(inicio_mes)
 
-  # Productos más vendidos (top 5 por unidades_vendidas)
   mas_vendidos = (
       Producto.query.filter_by(colmado_id=colmado_id)
       .order_by(Producto.unidades_vendidas.desc())
@@ -855,7 +876,6 @@ def reportes():
       for p in mas_vendidos
   ) or "<tr><td colspan='2'>Aún no hay ventas</td></tr>"
 
-  # Productos con bajo stock (menos de 10 unidades, ajustable)
   UMBRAL_BAJO_STOCK = 10
   bajo_stock = (
       Producto.query.filter(
@@ -991,80 +1011,220 @@ def alternar_empleado(usuario_id):
 
 
 # --- SUPER-ADMIN (tú, el creador del sistema) ---
-
-
-def superadmin_requerido(vista):
-  from functools import wraps
-
-  @wraps(vista)
-  def envoltura(*args, **kwargs):
-    if not session.get("es_superadmin"):
-      return redirect(url_for("superadmin_login"))
-    return vista(*args, **kwargs)
-
-  return envoltura
-
-
-@app.route("/superadmin", methods=["GET", "POST"])
-def superadmin_login():
-  if request.method == "POST":
-    clave = request.form.get("clave", "")
-    if clave == SUPERADMIN_PASSWORD:
-      session["es_superadmin"] = True
-      return redirect(url_for("superadmin_panel"))
-    flash("Clave incorrecta.", "danger")
-
-  return render_page(
-      "Super-Admin",
-      """
-        <h2>🔐 Panel de Administrador del Sistema</h2>
-        <form method="POST">
-            <input type="password" name="clave" placeholder="Clave maestra" required>
-            <button type="submit">Entrar</button>
-        </form>
-        """,
-      mostrar_nav=False,
-  )
+# Entra por el mismo /login de siempre, con un usuario que tenga rol='superadmin'.
 
 
 @app.route("/superadmin/panel")
+@login_required
 @superadmin_requerido
 def superadmin_panel():
-  colmados = Colmado.query.order_by(Colmado.fecha_registro.desc()).all()
-  filas = "".join(
-      f"""<tr>
-                <td>{c.nombre}</td>
-                <td>{c.fecha_registro.strftime('%d/%m/%Y')}</td>
-                <td>{c.membresia_vence.strftime('%d/%m/%Y') if c.membresia_vence else '-'}</td>
-                <td><span class="pill {'pill-ok' if c.membresia_vence and c.membresia_vence >= datetime.utcnow() else 'pill-pend'}">
-                    {'Activa' if c.membresia_vence and c.membresia_vence >= datetime.utcnow() else 'Vencida'}
-                </span></td>
-                <td>
-                    <a class="btn-link" href="{url_for('superadmin_renovar', colmado_id=c.id, dias=30)}">+30 días</a> ·
-                    <a class="btn-link" href="{url_for('superadmin_renovar', colmado_id=c.id, dias=7)}">+7 días</a>
-                </td>
+  colmados = (
+      Colmado.query.filter(Colmado.estado != "eliminado")
+      .order_by(Colmado.fecha_registro.desc())
+      .all()
+  )
+
+  def fila(c):
+    dueno = c.dueno
+    plan_nombre = c.plan.nombre if c.plan else "Sin plan"
+    vence = c.membresia_vence.strftime('%d/%m/%Y') if c.membresia_vence else '-'
+    return f"""<tr>
+                <td><a class="btn-link" href="{url_for('superadmin_colmado', colmado_id=c.id)}">{c.nombre}</a></td>
+                <td>{dueno.nombre if dueno else '-'}</td>
+                <td>{plan_nombre}</td>
+                <td>{vence}</td>
+                <td>{estado_pill(c.estado)}</td>
             </tr>"""
-      for c in colmados
-  ) or "<tr><td colspan='5'>Aún no hay colmados registrados.</td></tr>"
+
+  filas = "".join(fila(c) for c in colmados) or "<tr><td colspan='5'>Aún no hay colmados registrados.</td></tr>"
 
   cuerpo = f"""
         <h2>🔐 Panel de Super-Administrador</h2>
         <p style="color:var(--gris);">Todos los colmados registrados en el sistema.</p>
         <table>
-            <tr><th>Colmado</th><th>Registrado</th><th>Membresía vence</th><th>Estado</th><th>Renovar</th></tr>
+            <tr><th>Colmado</th><th>Dueño</th><th>Plan</th><th>Vence</th><th>Estado</th></tr>
             {filas}
         </table>
-        <br><a class="btn-link volver" href="{url_for('superadmin_logout')}">Cerrar sesión de administrador</a>
+        <br>
+        <a class="btn" href="{url_for('superadmin_nuevo_colmado')}">+ Nuevo Colmado</a>
+        <a class="btn" href="{url_for('superadmin_planes')}" style="background:var(--gris);">📋 Planes</a>
+        <br><a class="btn-link volver" href="{url_for('logout')}">Cerrar sesión</a>
     """
-  return render_page("Panel Super-Admin", cuerpo, mostrar_nav=False)
+  return render_page("Panel Super-Admin", cuerpo, mostrar_nav=True)
 
 
-@app.route("/superadmin/renovar/<int:colmado_id>/<int:dias>")
+@app.route("/superadmin/colmados/nuevo", methods=["GET", "POST"])
+@login_required
+@superadmin_requerido
+def superadmin_nuevo_colmado():
+  planes = Plan.query.filter_by(activo=True).all()
+
+  if request.method == "POST":
+    nombre_colmado = request.form.get("nombre_colmado")
+    nombre_dueno = request.form.get("nombre_dueno")
+    usuario = request.form.get("usuario")
+    clave = request.form.get("clave")
+    plan_id = request.form.get("plan_id") or None
+
+    if not nombre_colmado or not nombre_dueno or not usuario or not clave:
+      flash("Todos los campos son obligatorios.", "danger")
+      return redirect(url_for("superadmin_nuevo_colmado"))
+
+    if Usuario.query.filter_by(usuario=usuario).first():
+      flash("Ese usuario ya existe, elige otro.", "danger")
+      return redirect(url_for("superadmin_nuevo_colmado"))
+
+    plan = Plan.query.get(int(plan_id)) if plan_id else None
+    dias = plan.duracion_dias if plan else 30
+
+    nuevo_colmado = Colmado(
+        nombre=nombre_colmado,
+        plan_id=plan.id if plan else None,
+        membresia_vence=datetime.utcnow() + timedelta(days=dias),
+        estado="activo",
+    )
+    db.session.add(nuevo_colmado)
+    db.session.commit()
+
+    nuevo_dueno = Usuario(
+        colmado_id=nuevo_colmado.id,
+        nombre=nombre_dueno,
+        usuario=usuario,
+        clave_hash=generate_password_hash(clave),
+        rol="dueno",
+    )
+    db.session.add(nuevo_dueno)
+    db.session.commit()
+
+    flash(f"Colmado '{nombre_colmado}' creado correctamente.", "success")
+    return redirect(url_for("superadmin_panel"))
+
+  opciones_plan = "".join(
+      f'<option value="{p.id}">{p.nombre} (RD$ {p.precio:.2f} / {p.duracion_dias} días)</option>'
+      for p in planes
+  ) or '<option value="">Sin planes creados</option>'
+
+  cuerpo = f"""
+        <h2>➕ Nuevo Colmado</h2>
+        <form method="POST">
+            <input type="text" name="nombre_colmado" placeholder="Nombre del Colmado" required>
+            <input type="text" name="nombre_dueno" placeholder="Nombre del Dueño" required>
+            <input type="text" name="usuario" placeholder="Usuario del dueño" required>
+            <input type="password" name="clave" placeholder="Contraseña del dueño" required>
+            <label>Plan: <select name="plan_id">{opciones_plan}</select></label>
+            <button type="submit">Crear Colmado</button>
+        </form>
+        <br><a class="btn-link volver" href="{url_for('superadmin_panel')}">← Volver</a>
+    """
+  return render_page("Nuevo Colmado", cuerpo)
+
+
+@app.route("/superadmin/colmados/<int:colmado_id>")
+@login_required
+@superadmin_requerido
+def superadmin_colmado(colmado_id):
+  colmado = Colmado.query.get_or_404(colmado_id)
+  usuarios = Usuario.query.filter_by(colmado_id=colmado.id).all()
+  planes = Plan.query.filter_by(activo=True).all()
+
+  filas_usuarios = "".join(
+      f"""<tr>
+                <td>{u.nombre}</td><td>{u.usuario}</td>
+                <td><span class="pill pill-ok">{u.rol}</span></td>
+                <td><span class="pill {'pill-ok' if u.activo else 'pill-pend'}">{'Activo' if u.activo else 'Inactivo'}</span></td>
+            </tr>"""
+      for u in usuarios
+  ) or "<tr><td colspan='4'>Sin usuarios.</td></tr>"
+
+  opciones_plan = "".join(
+      f'<option value="{p.id}" {"selected" if colmado.plan_id == p.id else ""}>{p.nombre} (RD$ {p.precio:.2f} / {p.duracion_dias} días)</option>'
+      for p in planes
+  )
+
+  vence_valor = colmado.membresia_vence.strftime('%Y-%m-%d') if colmado.membresia_vence else ""
+
+  acciones_estado = ""
+  if colmado.estado == "activo":
+    acciones_estado = f'<a class="btn-link" href="{url_for("superadmin_estado_colmado", colmado_id=colmado.id, accion="suspender")}">⏸️ Suspender</a>'
+  elif colmado.estado == "suspendido":
+    acciones_estado = f'<a class="btn-link" href="{url_for("superadmin_estado_colmado", colmado_id=colmado.id, accion="activar")}">▶️ Activar</a>'
+
+  cuerpo = f"""
+        <h2>🏪 {colmado.nombre}</h2>
+        <p>{estado_pill(colmado.estado)} · Dueño: {colmado.dueno.nombre if colmado.dueno else '-'}</p>
+
+        <h3>Editar colmado</h3>
+        <form method="POST" action="{url_for('superadmin_editar_colmado', colmado_id=colmado.id)}">
+            <input type="text" name="nombre" value="{colmado.nombre}" required>
+            <button type="submit">Guardar Nombre</button>
+        </form>
+
+        <h3>Plan y vencimiento</h3>
+        <form method="POST" action="{url_for('superadmin_plan_colmado', colmado_id=colmado.id)}">
+            <label>Plan: <select name="plan_id">{opciones_plan}</select></label>
+            <label>Vence: <input type="date" name="vence" value="{vence_valor}"></label>
+            <button type="submit">Actualizar Plan</button>
+        </form>
+        <p>
+            <a class="btn-link" href="{url_for('superadmin_renovar', colmado_id=colmado.id, dias=30)}">+30 días</a> ·
+            <a class="btn-link" href="{url_for('superadmin_renovar', colmado_id=colmado.id, dias=7)}">+7 días</a>
+        </p>
+
+        <h3>Estado</h3>
+        <p>{acciones_estado} ·
+           <a class="btn-link" href="{url_for('superadmin_estado_colmado', colmado_id=colmado.id, accion='eliminar')}"
+              onclick="return confirm('¿Eliminar el colmado {colmado.nombre}? Esto lo desactiva por completo.')">🗑️ Eliminar</a>
+        </p>
+
+        <h3>Usuarios (dueño / empleados)</h3>
+        <table>
+            <tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th></tr>
+            {filas_usuarios}
+        </table>
+
+        <br><a class="btn-link volver" href="{url_for('superadmin_panel')}">← Volver al panel</a>
+    """
+  return render_page(f"Colmado · {colmado.nombre}", cuerpo)
+
+
+@app.route("/superadmin/colmados/<int:colmado_id>/editar", methods=["POST"])
+@login_required
+@superadmin_requerido
+def superadmin_editar_colmado(colmado_id):
+  colmado = Colmado.query.get_or_404(colmado_id)
+  nombre = request.form.get("nombre")
+  if nombre:
+    colmado.nombre = nombre
+    db.session.commit()
+    flash("Colmado actualizado.", "success")
+  return redirect(url_for("superadmin_colmado", colmado_id=colmado.id))
+
+
+@app.route("/superadmin/colmados/<int:colmado_id>/plan", methods=["POST"])
+@login_required
+@superadmin_requerido
+def superadmin_plan_colmado(colmado_id):
+  colmado = Colmado.query.get_or_404(colmado_id)
+  plan_id = request.form.get("plan_id")
+  vence = request.form.get("vence")
+
+  colmado.plan_id = int(plan_id) if plan_id else None
+  if vence:
+    colmado.membresia_vence = datetime.strptime(vence, "%Y-%m-%d")
+
+  db.session.commit()
+  flash("Plan y vencimiento actualizados.", "success")
+  return redirect(url_for("superadmin_colmado", colmado_id=colmado.id))
+
+
+@app.route("/superadmin/colmados/<int:colmado_id>/renovar/<int:dias>")
+@login_required
 @superadmin_requerido
 def superadmin_renovar(colmado_id, dias):
   colmado = Colmado.query.get_or_404(colmado_id)
   base = colmado.membresia_vence if colmado.membresia_vence and colmado.membresia_vence > datetime.utcnow() else datetime.utcnow()
   colmado.membresia_vence = base + timedelta(days=dias)
+  colmado.estado = "activo"
   colmado.membresia_activa = True
 
   pago = PagoMembresia(
@@ -1076,13 +1236,91 @@ def superadmin_renovar(colmado_id, dias):
   db.session.commit()
 
   flash(f"Membresía de '{colmado.nombre}' extendida {dias} días.", "success")
+  return redirect(url_for("superadmin_colmado", colmado_id=colmado.id))
+
+
+@app.route("/superadmin/colmados/<int:colmado_id>/estado/<accion>")
+@login_required
+@superadmin_requerido
+def superadmin_estado_colmado(colmado_id, accion):
+  colmado = Colmado.query.get_or_404(colmado_id)
+
+  if accion == "activar":
+    colmado.activar()
+    flash(f"'{colmado.nombre}' activado.", "success")
+  elif accion == "suspender":
+    colmado.suspender()
+    flash(f"'{colmado.nombre}' suspendido.", "success")
+  elif accion == "eliminar":
+    colmado.eliminar()
+    flash(f"'{colmado.nombre}' eliminado.", "success")
+  else:
+    flash("Acción no reconocida.", "danger")
+
+  db.session.commit()
   return redirect(url_for("superadmin_panel"))
 
 
-@app.route("/superadmin/logout")
-def superadmin_logout():
-  session.pop("es_superadmin", None)
-  return redirect(url_for("superadmin_login"))
+@app.route("/superadmin/planes")
+@login_required
+@superadmin_requerido
+def superadmin_planes():
+  planes = Plan.query.all()
+  filas = "".join(
+      f"""<tr>
+                <td>{p.nombre}</td><td>RD$ {p.precio:.2f}</td><td>{p.duracion_dias} días</td>
+                <td><span class="pill {'pill-ok' if p.activo else 'pill-pend'}">{'Disponible' if p.activo else 'Descontinuado'}</span></td>
+                <td><a class="btn-link" href="{url_for('superadmin_alternar_plan', plan_id=p.id)}">{'Descontinuar' if p.activo else 'Reactivar'}</a></td>
+            </tr>"""
+      for p in planes
+  ) or "<tr><td colspan='5'>Aún no hay planes creados.</td></tr>"
+
+  cuerpo = f"""
+        <h2>📋 Planes</h2>
+        <table>
+            <tr><th>Nombre</th><th>Precio</th><th>Duración</th><th>Estado</th><th></th></tr>
+            {filas}
+        </table>
+        <h3>Nuevo Plan</h3>
+        <form method="POST" action="{url_for('superadmin_nuevo_plan')}">
+            <input type="text" name="nombre" placeholder="Nombre del plan" required>
+            <input type="number" step="0.01" name="precio" placeholder="Precio" required>
+            <input type="number" name="duracion_dias" placeholder="Duración en días" value="30" required>
+            <button type="submit">Crear Plan</button>
+        </form>
+        <br><a class="btn-link volver" href="{url_for('superadmin_panel')}">← Volver</a>
+    """
+  return render_page("Planes", cuerpo)
+
+
+@app.route("/superadmin/planes/nuevo", methods=["POST"])
+@login_required
+@superadmin_requerido
+def superadmin_nuevo_plan():
+  nombre = request.form.get("nombre")
+  precio = request.form.get("precio")
+  duracion_dias = request.form.get("duracion_dias")
+
+  if not nombre or not precio or not duracion_dias:
+    flash("Todos los campos son obligatorios.", "danger")
+    return redirect(url_for("superadmin_planes"))
+
+  nuevo = Plan(nombre=nombre, precio=float(precio), duracion_dias=int(duracion_dias), activo=True)
+  db.session.add(nuevo)
+  db.session.commit()
+  flash("Plan creado correctamente.", "success")
+  return redirect(url_for("superadmin_planes"))
+
+
+@app.route("/superadmin/planes/<int:plan_id>/alternar")
+@login_required
+@superadmin_requerido
+def superadmin_alternar_plan(plan_id):
+  plan = Plan.query.get_or_404(plan_id)
+  plan.activo = not plan.activo
+  db.session.commit()
+  flash("Estado del plan actualizado.", "success")
+  return redirect(url_for("superadmin_planes"))
 
 
 with app.app_context():

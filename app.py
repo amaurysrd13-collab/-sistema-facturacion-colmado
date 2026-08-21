@@ -129,28 +129,49 @@ def moneda_colmado():
 ESTILOS = """
 <style>
   :root {
-    --verde: #1c7c3f;
-    --verde-oscuro: #145c2d;
-    --verde-claro: #e8f5ec;
-    --rojo: #c0392b;
+    --verde: #16a34a;
+    --verde-oscuro: #0f7a37;
+    --verde-claro: #e8f8ee;
+    --verde-suave: #dcfce7;
+    --ambar: #d97706;
+    --ambar-oscuro: #b45309;
+    --ambar-claro: #fef3e2;
+    --ambar-suave: #fde9c8;
+    --rojo: #dc2626;
+    --rojo-claro: #fdecea;
+    --azul: #2563eb;
+    --azul-claro: #eaf1ff;
     --gris: #6b7280;
+    --gris-claro: #f1f3f2;
     --fondo: #f4f6f5;
-    --borde: #e2e5e4;
-    --texto: #1f2a24;
+    --superficie: #ffffff;
+    --borde: #e5e8e6;
+    --texto: #1a2420;
+    --texto-suave: #5b6b62;
+    --radio: 14px;
+    --radio-sm: 10px;
+    --sombra: 0 1px 2px rgba(16, 30, 22, 0.04), 0 8px 24px -12px rgba(16, 30, 22, 0.12);
+    --sombra-hover: 0 4px 10px rgba(16, 30, 22, 0.06), 0 16px 32px -14px rgba(16, 30, 22, 0.18);
+    --transicion: all 0.18s cubic-bezier(.4,0,.2,1);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
   body {
     margin: 0;
     font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     background: var(--fondo);
+    background-image:
+      radial-gradient(circle at 0% 0%, rgba(22,163,74,0.05), transparent 45%),
+      radial-gradient(circle at 100% 0%, rgba(217,119,6,0.04), transparent 40%);
+    background-attachment: fixed;
     color: var(--texto);
     font-size: 16px;
+    line-height: 1.45;
   }
 
   /* ---------- BARRA SUPERIOR ---------- */
   .topbar {
-    background: var(--verde);
+    background: linear-gradient(135deg, var(--verde) 0%, var(--verde-oscuro) 100%);
     color: #fff;
     padding: 14px 20px;
     display: flex;
@@ -158,74 +179,154 @@ ESTILOS = """
     align-items: center;
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: 20;
+    box-shadow: 0 2px 12px rgba(15, 122, 55, 0.25);
   }
-  .topbar .brand { font-weight: 700; font-size: 1.1rem; text-decoration: none; color: #fff; display:flex; align-items:center; gap:8px; }
-  .topbar .brand img { height: 28px; border-radius: 6px; }
+  .topbar .brand { font-weight: 700; font-size: 1.1rem; text-decoration: none; color: #fff; display:flex; align-items:center; gap:8px; letter-spacing: 0.01em; }
+  .topbar .brand img { height: 28px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.25); }
   .topbar .salir {
-    color: #fff; text-decoration: none; font-size: 0.9rem; opacity: 0.9;
-    padding: 8px 10px; border-radius: 8px;
+    color: #fff; text-decoration: none; font-size: 0.88rem; opacity: 0.92;
+    padding: 9px 14px; border-radius: 999px; font-weight: 600;
+    background: rgba(255,255,255,0.14);
+    transition: var(--transicion);
+    border: 1px solid rgba(255,255,255,0.18);
   }
-  .topbar .salir:active, .topbar .salir:hover { opacity: 1; background: rgba(255,255,255,0.15); }
+  .topbar .salir:active, .topbar .salir:hover { opacity: 1; background: rgba(255,255,255,0.26); transform: translateY(-1px); }
 
   /* ---------- CONTENEDOR PRINCIPAL ---------- */
-  .wrap { max-width: 720px; margin: 24px auto; padding: 0 16px; }
+  .wrap { max-width: 720px; margin: 20px auto; padding: 0 14px; }
   .card {
-    background: #fff;
+    background: var(--superficie);
     border: 1px solid var(--borde);
-    border-radius: 12px;
-    padding: 24px;
-    margin-bottom: 20px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    border-radius: var(--radio);
+    padding: 22px;
+    margin-bottom: 18px;
+    box-shadow: var(--sombra);
   }
-  h1, h2, h3 { margin-top: 0; line-height: 1.25; }
-  h1 { font-size: 1.4rem; }
-  h2 { color: var(--verde-oscuro); font-size: 1.2rem; }
-  h3 { font-size: 1.05rem; }
+  h1, h2, h3 { margin-top: 0; line-height: 1.25; letter-spacing: -0.01em; }
+  h1 { font-size: 1.45rem; font-weight: 800; }
+  h2 { color: var(--verde-oscuro); font-size: 1.22rem; font-weight: 800; display:flex; align-items:center; gap:8px; }
+  h3 { font-size: 1.05rem; font-weight: 700; }
 
   /* ---------- MENÚ PRINCIPAL (dashboard) ---------- */
-  .menu { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 10px; grid-template-columns: 1fr; }
+  .menu { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 10px; grid-template-columns: 1fr; }
   .menu li a {
     display: flex;
     align-items: center;
-    min-height: 48px;
+    gap: 12px;
+    min-height: 54px;
     background: var(--verde-claro);
     color: var(--verde-oscuro);
     text-decoration: none;
     padding: 14px 16px;
-    border-radius: 10px;
-    font-weight: 600;
-    transition: background 0.15s;
+    border-radius: var(--radio-sm);
+    font-weight: 700;
+    font-size: 0.97rem;
+    border: 1px solid transparent;
+    transition: var(--transicion);
+    position: relative;
+    overflow: hidden;
   }
-  .menu li a:active, .menu li a:hover { background: #d5ecdc; }
-  .grupo-menu { margin-top: 22px; }
-  .grupo-menu h3 { color: var(--gris); text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.04em; margin-bottom: 6px; }
+  .menu li a::after {
+    content: "›";
+    margin-left: auto;
+    font-size: 1.3rem;
+    opacity: 0.35;
+    transition: var(--transicion);
+  }
+  .menu li a:active, .menu li a:hover {
+    background: #fff;
+    border-color: var(--verde);
+    box-shadow: var(--sombra-hover);
+    transform: translateY(-2px);
+  }
+  .menu li a:hover::after { opacity: 0.9; transform: translateX(2px); }
+
+  /* Sección de fiados en el dashboard: paleta ámbar propia, separada visualmente de Ventas */
+  .zona-fiado .menu li a {
+    background: var(--ambar-claro);
+    color: var(--ambar-oscuro);
+  }
+  .zona-fiado .menu li a:hover { border-color: var(--ambar); }
+  .zona-fiado h3 { color: var(--ambar-oscuro); }
+
+  .grupo-menu { margin-top: 24px; }
+  .grupo-menu h3 {
+    color: var(--gris);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .grupo-menu h3::before {
+    content: "";
+    width: 4px;
+    height: 14px;
+    border-radius: 4px;
+    background: var(--verde);
+    display: inline-block;
+  }
+  .zona-fiado .grupo-menu h3::before { background: var(--ambar); }
+
+  /* Bloque destacado tipo "sección aparte" para separar Fiados del resto */
+  .seccion-separada {
+    border: 1.5px dashed var(--ambar);
+    background: linear-gradient(180deg, var(--ambar-claro) 0%, rgba(254,243,226,0.35) 100%);
+    border-radius: var(--radio);
+    padding: 16px 16px 8px;
+    margin-top: 26px;
+  }
+  .seccion-separada .grupo-menu { margin-top: 4px; }
+  .seccion-separada h3::before { display: none; }
+  .etiqueta-seccion {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--ambar);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 10px;
+  }
 
   /* ---------- FORMULARIOS ---------- */
-  form { display: flex; flex-direction: column; gap: 12px; max-width: 420px; width: 100%; }
+  form { display: flex; flex-direction: column; gap: 13px; max-width: 420px; width: 100%; }
   form.form-linea { flex-direction: row; align-items: center; max-width: none; flex-wrap: wrap; }
   input[type=text], input[type=password], input[type=number], input[type=date], select, textarea {
-    padding: 12px 12px;
-    border: 1px solid var(--borde);
-    border-radius: 8px;
+    padding: 13px 14px;
+    border: 1.5px solid var(--borde);
+    border-radius: var(--radio-sm);
     font-size: 1rem;
     width: 100%;
-    background: #fff;
+    background: #fbfcfb;
     color: var(--texto);
+    transition: var(--transicion);
   }
-  input:focus, select:focus, textarea:focus { outline: 2px solid var(--verde); border-color: var(--verde); }
-  label { font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--verde);
+    background: #fff;
+    box-shadow: 0 0 0 4px rgba(22,163,74,0.12);
+  }
+  label { font-size: 0.95rem; display: flex; align-items: center; gap: 8px; font-weight: 500; }
 
-  /* ---------- BOTONES ---------- */
+  /* ---------- BOTONES (más dinámicos: hover, presión, sombra) ---------- */
   button, .btn {
-    background: var(--verde);
+    background: linear-gradient(135deg, var(--verde) 0%, var(--verde-oscuro) 100%);
     color: #fff;
     border: none;
-    padding: 13px 18px;
-    min-height: 46px;
-    border-radius: 8px;
-    font-size: 1rem;
-    font-weight: 600;
+    padding: 13px 20px;
+    min-height: 48px;
+    border-radius: var(--radio-sm);
+    font-size: 0.98rem;
+    font-weight: 700;
     cursor: pointer;
     text-decoration: none;
     display: inline-flex;
@@ -233,48 +334,85 @@ ESTILOS = """
     justify-content: center;
     text-align: center;
     margin-bottom: 4px;
+    gap: 6px;
+    box-shadow: 0 2px 6px rgba(15,122,55,0.25);
+    transition: var(--transicion);
+    letter-spacing: 0.01em;
   }
-  button:active, button:hover, .btn:active, .btn:hover { background: var(--verde-oscuro); }
+  button:hover, .btn:hover {
+    box-shadow: 0 6px 16px rgba(15,122,55,0.35);
+    transform: translateY(-2px);
+    filter: brightness(1.04);
+  }
+  button:active, .btn:active { transform: translateY(0); box-shadow: 0 1px 4px rgba(15,122,55,0.3); }
   .btn-link {
-    background: none; color: var(--verde-oscuro); padding: 10px 0; font-weight: 600;
-    min-height: 40px; display: inline-flex; align-items: center;
+    background: none; color: var(--verde-oscuro); padding: 10px 2px; font-weight: 700;
+    min-height: 40px; display: inline-flex; align-items: center; box-shadow: none;
   }
-  .btn-link:hover { text-decoration: underline; background: none; }
+  .btn-link:hover { text-decoration: underline; background: none; transform: none; box-shadow: none; }
+  .btn[style*="rojo"], .btn.btn-rojo { box-shadow: 0 2px 6px rgba(220,38,38,0.25) !important; }
+  .btn[style*="rojo"]:hover { box-shadow: 0 6px 16px rgba(220,38,38,0.35) !important; }
+  .btn-ambar, a.btn.ambar { background: linear-gradient(135deg, var(--ambar) 0%, var(--ambar-oscuro) 100%) !important; box-shadow: 0 2px 6px rgba(180,83,9,0.28) !important; }
+  .btn-ambar:hover, a.btn.ambar:hover { box-shadow: 0 6px 16px rgba(180,83,9,0.38) !important; }
 
   /* ---------- TABLAS ---------- */
-  .tabla-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tabla-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--radio-sm); }
   table { width: 100%; min-width: 480px; border-collapse: collapse; margin-top: 8px; }
-  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--borde); font-size: 0.9rem; white-space: nowrap; }
-  th { color: var(--gris); font-weight: 600; text-transform: uppercase; font-size: 0.72rem; }
+  th, td { text-align: left; padding: 11px 10px; border-bottom: 1px solid var(--borde); font-size: 0.9rem; white-space: nowrap; }
+  th { color: var(--gris); font-weight: 700; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.03em; background: var(--gris-claro); }
+  th:first-child { border-top-left-radius: var(--radio-sm); }
+  th:last-child { border-top-right-radius: var(--radio-sm); }
   tr:last-child td { border-bottom: none; }
+  tbody tr { transition: var(--transicion); }
+  tbody tr:hover { background: var(--verde-claro); }
 
-  .flash { padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; font-size: 0.95rem; }
-  .flash-success { background: #e8f5ec; color: var(--verde-oscuro); }
-  .flash-danger { background: #fdecea; color: var(--rojo); }
+  .flash { padding: 13px 16px; border-radius: var(--radio-sm); margin-bottom: 14px; font-size: 0.95rem; font-weight: 600; border-left: 4px solid transparent; }
+  .flash-success { background: var(--verde-suave); color: var(--verde-oscuro); border-left-color: var(--verde); }
+  .flash-danger { background: var(--rojo-claro); color: var(--rojo); border-left-color: var(--rojo); }
   .volver { margin-top: 16px; display: inline-block; }
-  .pill { padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
-  .pill-ok { background: #e8f5ec; color: var(--verde-oscuro); }
-  .pill-pend { background: #fdecea; color: var(--rojo); }
+  .pill { padding: 4px 11px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; white-space: nowrap; }
+  .pill-ok { background: var(--verde-suave); color: var(--verde-oscuro); }
+  .pill-pend { background: var(--rojo-claro); color: var(--rojo); }
+  .pill-fiado { background: var(--ambar-suave); color: var(--ambar-oscuro); }
   ul.simple { padding-left: 18px; }
-  ul.simple li { margin-bottom: 6px; }
+  ul.simple li { margin-bottom: 7px; }
   #buscar-producto { margin-bottom: 8px; }
-  .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 14px; }
-  .tabs a { padding: 8px 14px; border-radius: 999px; background: var(--verde-claro); color: var(--verde-oscuro); text-decoration:none; font-weight:600; font-size:0.85rem; }
-  .tabs a.activo { background: var(--verde); color: #fff; }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 16px; }
+  .tabs a {
+    padding: 9px 16px; border-radius: 999px; background: var(--gris-claro); color: var(--texto-suave);
+    text-decoration:none; font-weight:700; font-size:0.85rem; transition: var(--transicion); border: 1.5px solid transparent;
+  }
+  .tabs a:hover { border-color: var(--verde); color: var(--verde-oscuro); }
+  .tabs a.activo { background: var(--verde); color: #fff; box-shadow: 0 2px 8px rgba(15,122,55,0.3); }
+
+  /* Estadísticas rápidas tipo tarjeta (usadas en resumen del día / reportes) */
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+  .stat-card {
+    background: var(--verde-claro); border-radius: var(--radio-sm); padding: 14px;
+    border: 1px solid transparent; transition: var(--transicion);
+  }
+  .stat-card:hover { transform: translateY(-2px); box-shadow: var(--sombra-hover); }
+  .stat-card .stat-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--verde-oscuro); font-weight: 700; opacity: 0.8; }
+  .stat-card .stat-valor { font-size: 1.25rem; font-weight: 800; color: var(--verde-oscuro); margin-top: 2px; }
+  .stat-card.ambar { background: var(--ambar-claro); }
+  .stat-card.ambar .stat-label, .stat-card.ambar .stat-valor { color: var(--ambar-oscuro); }
 
   /* ---------- TABLET (a partir de 640px) ---------- */
   @media (min-width: 640px) {
     .wrap { padding: 0 24px; }
-    .card { padding: 32px; }
-    h1 { font-size: 1.6rem; }
-    h2 { font-size: 1.35rem; }
+    .card { padding: 30px; }
+    h1 { font-size: 1.65rem; }
+    h2 { font-size: 1.4rem; }
     .menu { grid-template-columns: repeat(2, 1fr); }
+    .stat-grid { grid-template-columns: repeat(4, 1fr); }
   }
 
   /* ---------- PC / PANTALLAS GRANDES (a partir de 960px) ---------- */
   @media (min-width: 960px) {
-    .wrap { max-width: 900px; margin: 40px auto; }
+    .wrap { max-width: 960px; margin: 36px auto; }
     .menu { grid-template-columns: repeat(3, 1fr); }
+    .menu li a { min-height: 58px; }
+    .card { padding: 34px 38px; }
   }
 </style>
 """
@@ -468,7 +606,7 @@ def dashboard():
         <li><a href="{url_for('resumen_dia')}">📊 Resumen del Día</a></li>
     """
 
-  # --- 🛒 Ventas ---
+  # --- 🛒 Ventas (SOLO contado — los fiados viven en su propia sección visual) ---
   bloque_ventas = f"""
             <li><a href="{url_for('nueva_venta')}">🧾 Nueva Venta</a></li>
             <li><a href="{url_for('ventas')}">📜 Historial de Ventas</a></li>
@@ -492,8 +630,8 @@ def dashboard():
   if current_user.tiene_permiso("caja_completa"):
     bloque_caja = f'<li><a href="{url_for("caja")}">💰 Caja</a></li>'
 
-  # --- 📒 Fiados ---
-  bloque_fiados = f'<li><a href="{url_for("fiados")}">💳 Fiados / Deudas</a></li>'
+  # --- 💳 Fiados (sección visualmente separada, paleta ámbar) ---
+  bloque_fiados = f'<li><a href="{url_for("fiados")}">💳 Ver Fiados / Deudas</a></li>'
 
   # --- 🛵 Delivery ---
   bloque_delivery = f'<li><a href="{url_for("delivery")}">🛵 Delivery</a></li>'
@@ -546,6 +684,14 @@ def dashboard():
         </div>
     """
 
+  # Aviso rápido de cuánto hay pendiente en fiados, para que se note desde el dashboard
+  # sin mezclar la sección visualmente con Ventas.
+  total_fiado_pendiente = sum(
+      (f.monto_total - f.monto_pagado)
+      for f in Fiado.query.filter_by(colmado_id=current_user.colmado_id, saldado=False).all()
+  )
+  m = moneda_colmado()
+
   cuerpo = f"""
         <h1>Hola, {current_user.nombre} 👋</h1>
         <p>Rol: <strong>{current_user.rol}</strong></p>
@@ -553,15 +699,25 @@ def dashboard():
         {aviso_stock}
 
         <div class="grupo-menu"><h3>Principal</h3><ul class="menu">{bloque_principal}</ul></div>
-        <div class="grupo-menu"><h3>Ventas</h3><ul class="menu">{bloque_ventas}</ul></div>
+        <div class="grupo-menu"><h3>Ventas al Contado</h3><ul class="menu">{bloque_ventas}</ul></div>
         <div class="grupo-menu"><h3>Inventario</h3><ul class="menu">{bloque_productos}</ul></div>
         {f'<div class="grupo-menu"><h3>Caja</h3><ul class="menu">{bloque_caja}</ul></div>' if bloque_caja else ''}
-        <div class="grupo-menu"><h3>Fiados / Deudas</h3><ul class="menu">{bloque_fiados}</ul></div>
         <div class="grupo-menu"><h3>Delivery</h3><ul class="menu">{bloque_delivery}</ul></div>
         {f'<div class="grupo-menu"><h3>Empleados</h3><ul class="menu">{bloque_empleados}</ul></div>' if bloque_empleados else ''}
         {f'<div class="grupo-menu"><h3>Reportes</h3><ul class="menu">{bloque_reportes}</ul></div>' if bloque_reportes else ''}
         {f'<div class="grupo-menu"><h3>Configuración</h3><ul class="menu">{bloque_config}</ul></div>' if bloque_config else ''}
         <div class="grupo-menu"><h3>Cuenta</h3><ul class="menu">{bloque_cuenta}</ul></div>
+
+        <div class="seccion-separada zona-fiado">
+            <span class="etiqueta-seccion">💳 Sección aparte</span>
+            <div class="grupo-menu" style="margin-top:2px;">
+                <h3>Fiados / Deudas</h3>
+                <p style="color:var(--ambar-oscuro); font-size:0.85rem; margin:0 0 10px;">
+                    Pendiente por cobrar: <strong>{m} {total_fiado_pendiente:.2f}</strong>
+                </p>
+                <ul class="menu">{bloque_fiados}</ul>
+            </div>
+        </div>
     """
   return render_page("Dashboard", cuerpo)
 
@@ -597,7 +753,7 @@ def resumen_dia():
   ).count()
 
   puede_ver_ganancias = current_user.tiene_permiso("ganancias")
-  ganancia_hoy_html = ""
+  tarjeta_ganancia = ""
   if puede_ver_ganancias:
     ganancia_hoy = (
         db.session.query(
@@ -607,22 +763,41 @@ def resumen_dia():
         .filter(Venta.colmado_id == colmado_id, Venta.fecha >= inicio_hoy)
         .scalar()
     ) or 0.0
-    ganancia_hoy_html = f"<li>Ganancia estimada hoy: <strong>{m} {ganancia_hoy:.2f}</strong></li>"
+    tarjeta_ganancia = f"""
+        <div class="stat-card">
+            <div class="stat-label">Ganancia estimada hoy</div>
+            <div class="stat-valor">{m} {ganancia_hoy:.2f}</div>
+        </div>
+    """
 
-  caja_html = ""
+  tarjeta_caja = ""
   if current_user.tiene_permiso("caja_completa"):
     esperado_hoy = _efectivo_esperado_hoy(colmado_id)
-    caja_html = f"<li>Efectivo esperado en caja: <strong>{m} {esperado_hoy:.2f}</strong></li>"
+    tarjeta_caja = f"""
+        <div class="stat-card">
+            <div class="stat-label">Efectivo esperado</div>
+            <div class="stat-valor">{m} {esperado_hoy:.2f}</div>
+        </div>
+    """
 
   cuerpo = f"""
         <h2>📊 Resumen del Día</h2>
-        <ul class="simple">
-            <li>Ventas al contado hoy: <strong>{len(ventas_contado)}</strong> · {m} {total_contado:.2f}</li>
-            <li>Ventas fiadas hoy: <strong>{len(ventas_fiado)}</strong> · {m} {total_fiado:.2f}</li>
-            {caja_html}
-            {ganancia_hoy_html}
-            <li>Pedidos de delivery pendientes: <strong>{pedidos_pendientes}</strong></li>
-        </ul>
+        <div class="stat-grid">
+            <div class="stat-card">
+                <div class="stat-label">Ventas al contado</div>
+                <div class="stat-valor">{len(ventas_contado)} · {m} {total_contado:.2f}</div>
+            </div>
+            <div class="stat-card ambar">
+                <div class="stat-label">Ventas fiadas</div>
+                <div class="stat-valor">{len(ventas_fiado)} · {m} {total_fiado:.2f}</div>
+            </div>
+            {tarjeta_caja}
+            {tarjeta_ganancia}
+            <div class="stat-card">
+                <div class="stat-label">Delivery pendiente</div>
+                <div class="stat-valor">{pedidos_pendientes}</div>
+            </div>
+        </div>
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
   return render_page("Resumen del Día", cuerpo)
@@ -1425,9 +1600,14 @@ def nueva_venta():
                 {filas}
             </table>
             </div>
-            <label><input type="checkbox" name="es_fiado" id="es_fiado"> Es venta fiada (a crédito)</label>
-            <input type="text" name="nombre_cliente" placeholder="Nombre del cliente (si es fiado)">
-            <input type="text" name="telefono_cliente" placeholder="Teléfono del cliente (opcional)">
+
+            <div id="bloque-tipo-venta" style="border:1.5px solid var(--borde); border-radius: var(--radio-sm); padding: 14px; background: var(--gris-claro);">
+                <label style="font-weight:700;"><input type="checkbox" name="es_fiado" id="es_fiado"> 💳 Es venta fiada (a crédito)</label>
+                <div id="campos-fiado" style="display:none; margin-top:10px;">
+                    <input type="text" name="nombre_cliente" placeholder="Nombre del cliente">
+                    <input type="text" name="telefono_cliente" placeholder="Teléfono del cliente (opcional)" style="margin-top:8px;">
+                </div>
+            </div>
 
             <div id="bloque-efectivo">
                 <input type="number" step="0.01" name="efectivo_recibido" id="efectivo_recibido"
@@ -1435,7 +1615,7 @@ def nueva_venta():
                 <p id="texto-cambio" style="color:var(--gris); font-size:0.9rem; margin:0;"></p>
             </div>
 
-            <button type="submit">Registrar Venta</button>
+            <button type="submit" id="btn-registrar-venta">Registrar Venta</button>
         </form>
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
 
@@ -1480,9 +1660,21 @@ def nueva_venta():
 
             function actualizarVisibilidadEfectivo() {{
                 const esFiado = document.getElementById("es_fiado").checked;
+                const bloqueTipo = document.getElementById("bloque-tipo-venta");
+                const btn = document.getElementById("btn-registrar-venta");
                 document.getElementById("bloque-efectivo").style.display = esFiado ? "none" : "block";
+                document.getElementById("campos-fiado").style.display = esFiado ? "block" : "none";
                 if (esFiado) {{
                     document.getElementById("efectivo_recibido").value = "";
+                    bloqueTipo.style.background = "var(--ambar-claro)";
+                    bloqueTipo.style.borderColor = "var(--ambar)";
+                    btn.style.background = "linear-gradient(135deg, var(--ambar) 0%, var(--ambar-oscuro) 100%)";
+                    btn.textContent = "💳 Registrar Venta Fiada";
+                }} else {{
+                    bloqueTipo.style.background = "var(--gris-claro)";
+                    bloqueTipo.style.borderColor = "var(--borde)";
+                    btn.style.background = "";
+                    btn.textContent = "Registrar Venta";
                 }}
             }}
 
@@ -1498,10 +1690,10 @@ def nueva_venta():
 @app.route("/ventas")
 @login_required
 def ventas():
-  """NUEVO — Historial de Ventas separado de los Fiados: por defecto
-  esta pantalla solo muestra ventas al CONTADO (pagadas). Las fiadas
-  viven en su propio módulo (/fiados). Con ?tipo=fiado o ?tipo=todas
-  se puede cambiar la vista."""
+  """Historial de Ventas: por defecto esta pantalla solo muestra ventas al
+  CONTADO (pagadas). Las fiadas viven en su propio módulo (/fiados), con
+  paleta de color propia, para separarlas claramente. Con ?tipo=fiado o
+  ?tipo=todas se puede cambiar la vista si hace falta consultarlas aquí."""
   m = moneda_colmado()
   tipo = request.args.get("tipo", "contado")
 
@@ -1519,7 +1711,7 @@ def ventas():
                 <td>#{v.id}</td>
                 <td>{v.fecha.strftime('%d/%m/%Y %H:%M')}</td>
                 <td>{m} {v.total:.2f}</td>
-                <td><span class="pill {'pill-pend' if v.es_fiado else 'pill-ok'}">{'Fiado' if v.es_fiado else 'Contado'}</span></td>
+                <td><span class="pill {'pill-fiado' if v.es_fiado else 'pill-ok'}">{'Fiado' if v.es_fiado else 'Contado'}</span></td>
                 <td><a class="btn-link" href="{url_for('recibo', venta_id=v.id)}">Ver Recibo</a></td>
             </tr>"""
       for v in lista
@@ -1532,8 +1724,8 @@ def ventas():
             <a class="{'activo' if tipo == 'fiado' else ''}" href="{url_for('ventas', tipo='fiado')}">Fiadas</a>
             <a class="{'activo' if tipo == 'todas' else ''}" href="{url_for('ventas', tipo='todas')}">Todas</a>
         </div>
-        <p style="color:var(--gris); font-size:0.85rem;">
-            Las ventas fiadas también se administran en su propio módulo: <a class="btn-link" href="{url_for('fiados')}">💳 Fiados / Deudas</a>.
+        <p style="color:var(--ambar-oscuro); font-size:0.85rem; background:var(--ambar-claro); padding:10px 12px; border-radius:var(--radio-sm);">
+            💳 Las ventas fiadas tienen su propio módulo, separado de este historial: <a class="btn-link" style="color:var(--ambar-oscuro);" href="{url_for('fiados')}">ir a Fiados / Deudas →</a>
         </p>
         <div class="tabla-scroll">
             <table>
@@ -1623,8 +1815,8 @@ def recibo(venta_id):
   linea_fiado = ""
   if fiado:
     linea_fiado = f"""
-        <p style="text-align:center; color:var(--rojo); font-weight:600;">
-            FIADO A: {fiado.nombre_cliente}{' · ' + fiado.telefono_cliente if fiado.telefono_cliente else ''}
+        <p style="text-align:center; color:var(--ambar-oscuro); font-weight:700; background:var(--ambar-claro); padding:8px; border-radius:var(--radio-sm);">
+            💳 FIADO A: {fiado.nombre_cliente}{' · ' + fiado.telefono_cliente if fiado.telefono_cliente else ''}
         </p>
     """
 
@@ -1679,7 +1871,7 @@ def recibo(venta_id):
 
   cuerpo = f"""
         <div id="ticket">
-            <h2 style="text-align:center; margin-bottom:0;">{colmado.nombre_para_recibo()}</h2>
+            <h2 style="text-align:center; margin-bottom:0; justify-content:center;">{colmado.nombre_para_recibo()}</h2>
             <p style="text-align:center; color:var(--gris); margin-top:4px;">Recibo de Venta #{venta.id}</p>
             <p style="text-align:center; color:var(--gris); font-size:0.85rem;">{venta.fecha.strftime('%d/%m/%Y %H:%M')} · Atendió: {cajero.nombre if cajero else '-'}</p>
             {linea_fiado}
@@ -1898,7 +2090,7 @@ def devolver_venta(venta_id):
   return render_page("Devolución", cuerpo)
 
 
-# --- FIADOS / DEUDAS (módulo completamente separado de Ventas) ---
+# --- FIADOS / DEUDAS (módulo completamente separado de Ventas, con su propia paleta de color) ---
 
 
 @app.route("/fiados")
@@ -1923,7 +2115,7 @@ def fiados():
                 <td>{m} {f.monto_total:.2f}</td>
                 <td>{m} {f.monto_pagado:.2f}</td>
                 <td>{m} {(f.monto_total - f.monto_pagado):.2f}</td>
-                <td><span class="pill {'pill-ok' if f.saldado else 'pill-pend'}">{'Saldado' if f.saldado else 'Pendiente'}</span></td>
+                <td><span class="pill {'pill-ok' if f.saldado else 'pill-fiado'}">{'Saldado' if f.saldado else 'Pendiente'}</span></td>
                 <td>
                     {'' if f.saldado else f'<a class="btn-link" href="{url_for("abonar_fiado", fiado_id=f.id)}">Abonar</a> · '}
                     <a class="btn-link" href="{url_for('historial_pagos_fiado', fiado_id=f.id)}">Historial</a> ·
@@ -1934,8 +2126,11 @@ def fiados():
   ) or "<tr><td colspan='7'>No hay fiados registrados con este filtro.</td></tr>"
 
   cuerpo = f"""
-        <h2>💳 Fiados / Deudas</h2>
-        <p style="color:var(--gris);">Saldo pendiente total: <strong>{m} {total_pendiente:.2f}</strong></p>
+        <div style="background:linear-gradient(135deg, var(--ambar) 0%, var(--ambar-oscuro) 100%); color:#fff; padding:18px 20px; border-radius: var(--radio); margin: -22px -22px 18px;">
+            <h2 style="color:#fff; margin:0;">💳 Fiados / Deudas</h2>
+            <p style="margin:6px 0 0; opacity:0.92; font-size:0.9rem;">Módulo separado del historial de ventas al contado.</p>
+            <p style="margin:10px 0 0; font-size:1.15rem; font-weight:800;">Pendiente total: {m} {total_pendiente:.2f}</p>
+        </div>
         <div class="tabs">
             <a class="{'activo' if filtro == 'pendientes' else ''}" href="{url_for('fiados', estado='pendientes')}">Pendientes</a>
             <a class="{'activo' if filtro == 'saldados' else ''}" href="{url_for('fiados', estado='saldados')}">Saldados</a>
@@ -2020,12 +2215,16 @@ def abonar_fiado(fiado_id):
     return redirect(url_for("fiados"))
 
   cuerpo = f"""
-        <h2>Abonar a la deuda de {fiado.nombre_cliente}</h2>
-        <p>Total: {m} {fiado.monto_total:.2f} &nbsp;|&nbsp; Pagado: {m} {fiado.monto_pagado:.2f} &nbsp;|&nbsp; Pendiente: {m} {pendiente:.2f}</p>
+        <h2 style="color:var(--ambar-oscuro);">💳 Abonar a la deuda de {fiado.nombre_cliente}</h2>
+        <div class="stat-grid">
+            <div class="stat-card ambar"><div class="stat-label">Total</div><div class="stat-valor">{m} {fiado.monto_total:.2f}</div></div>
+            <div class="stat-card ambar"><div class="stat-label">Pagado</div><div class="stat-valor">{m} {fiado.monto_pagado:.2f}</div></div>
+            <div class="stat-card ambar"><div class="stat-label">Pendiente</div><div class="stat-valor">{m} {pendiente:.2f}</div></div>
+        </div>
         <form method="POST">
             <input type="number" step="0.01" name="monto" placeholder="Monto a abonar" max="{pendiente}" required>
             <input type="text" name="nota" placeholder="Nota (opcional)">
-            <button type="submit">Registrar Abono</button>
+            <button type="submit" class="btn-ambar">Registrar Abono</button>
         </form>
         <br><a class="btn-link" href="{url_for('historial_pagos_fiado', fiado_id=fiado.id)}">Ver historial de pagos</a>
         <br><a class="btn-link volver" href="{url_for('fiados')}">← Volver</a>
@@ -2060,7 +2259,7 @@ def historial_pagos_fiado(fiado_id):
   filas = "".join(fila(a) for a in abonos) or "<tr><td colspan='4'>Aún no hay abonos registrados.</td></tr>"
 
   cuerpo = f"""
-        <h2>📜 Historial de Pagos — {fiado.nombre_cliente}</h2>
+        <h2 style="color:var(--ambar-oscuro);">📜 Historial de Pagos — {fiado.nombre_cliente}</h2>
         <p>Total: {m} {fiado.monto_total:.2f} &nbsp;|&nbsp; Pagado: {m} {fiado.monto_pagado:.2f} &nbsp;|&nbsp; Pendiente: {m} {(fiado.monto_total - fiado.monto_pagado):.2f}</p>
         <div class="tabla-scroll">
             <table>
@@ -2136,17 +2335,17 @@ def reportes():
   if current_user.tiene_permiso("ganancias"):
     seccion_ganancias = f"""
         <h3>Ventas (ingresos, contado + fiado)</h3>
-        <ul class="simple">
-            <li>Hoy: <strong>{m} {total_hoy:.2f}</strong></li>
-            <li>Esta semana: <strong>{m} {total_semana:.2f}</strong></li>
-            <li>Este mes: <strong>{m} {total_mes:.2f}</strong></li>
-        </ul>
+        <div class="stat-grid">
+            <div class="stat-card"><div class="stat-label">Hoy</div><div class="stat-valor">{m} {total_hoy:.2f}</div></div>
+            <div class="stat-card"><div class="stat-label">Esta semana</div><div class="stat-valor">{m} {total_semana:.2f}</div></div>
+            <div class="stat-card"><div class="stat-label">Este mes</div><div class="stat-valor">{m} {total_mes:.2f}</div></div>
+        </div>
         <h3>Ganancia real (venta − costo)</h3>
-        <ul class="simple">
-            <li>Hoy: <strong>{m} {ganancia_hoy:.2f}</strong></li>
-            <li>Esta semana: <strong>{m} {ganancia_semana:.2f}</strong></li>
-            <li>Este mes: <strong>{m} {ganancia_mes:.2f}</strong></li>
-        </ul>
+        <div class="stat-grid">
+            <div class="stat-card"><div class="stat-label">Hoy</div><div class="stat-valor">{m} {ganancia_hoy:.2f}</div></div>
+            <div class="stat-card"><div class="stat-label">Esta semana</div><div class="stat-valor">{m} {ganancia_semana:.2f}</div></div>
+            <div class="stat-card"><div class="stat-label">Este mes</div><div class="stat-valor">{m} {ganancia_mes:.2f}</div></div>
+        </div>
         <p style="color:var(--gris); font-size:0.8rem;">
             La ganancia se calcula con el costo que tenía cada producto al momento de venderlo.
             Si nunca le pusiste costo a tus productos, aquí verás {m} 0.00.
@@ -2274,7 +2473,7 @@ def reporte_fiados():
   total_cobrado = sum(f.monto_pagado for f in todos)
 
   cuerpo = f"""
-        <h2>💳 Reporte de Fiados</h2>
+        <h2 style="color:var(--ambar-oscuro);">💳 Reporte de Fiados</h2>
         <ul class="simple">
             <li>Clientes con fiado (histórico): <strong>{len(todos)}</strong></li>
             <li>Clientes con deuda pendiente: <strong>{len(pendientes)}</strong></li>
@@ -2520,7 +2719,7 @@ def caja_movimientos():
     return f"""<tr>
                 <td>{mov.fecha.strftime('%H:%M')}</td>
                 <td><span class="pill {color}">{signo} {m} {mov.monto:.2f}</span></td>
-                <td><span class="pill pill-pend">{origen_txt}</span></td>
+                <td><span class="pill {'pill-fiado' if mov.origen == 'fiado' else 'pill-pend'}">{origen_txt}</span></td>
                 <td>{mov.motivo}</td>
                 <td>{usuario_mov.nombre if usuario_mov else '-'}</td>
             </tr>"""
@@ -3125,7 +3324,7 @@ def actividad_empleado(usuario_id):
   )
   filas_ventas = "".join(
       f"<tr><td>{v.fecha.strftime('%d/%m/%Y %H:%M')}</td><td>{m} {v.total:.2f}</td>"
-      f"<td><span class='pill {'pill-pend' if v.es_fiado else 'pill-ok'}'>{'Fiado' if v.es_fiado else 'Contado'}</span></td>"
+      f"<td><span class='pill {'pill-fiado' if v.es_fiado else 'pill-ok'}'>{'Fiado' if v.es_fiado else 'Contado'}</span></td>"
       f"<td><a class='btn-link' href='{url_for('recibo', venta_id=v.id)}'>Ver</a></td></tr>"
       for v in ventas_u
   ) or "<tr><td colspan='4'>Sin ventas registradas.</td></tr>"

@@ -11,10 +11,11 @@ db = SQLAlchemy()
 # Agregar/eliminar empleados y configuración del colmado NUNCA son delegables:
 # esas rutas siguen protegidas solo para el rol 'dueno'.
 PERMISOS_DISPONIBLES = {
-    "productos": "Agregar, editar y eliminar productos (incluye cambiar precios)",
+    "productos": "Agregar, editar y eliminar productos (incluye cambiar precios, costos y presentaciones)",
     "reportes": "Ver reportes generales del negocio",
     "ganancias": "Ver ganancias y totales del negocio",
     "caja_completa": "Ver y hacer el cuadre completo de caja",
+    "devoluciones": "Registrar devoluciones de productos vendidos",
 }
 
 
@@ -46,7 +47,10 @@ class Colmado(db.Model):
     # Valores: 'activo', 'suspendido', 'eliminado'
     estado = db.Column(db.String(20), nullable=False, default='activo')
 
-    # Configuración propia del colmado (moneda, logo, nombre del negocio en factura, etc.)
+    # Configuración propia del colmado: moneda, nombre a mostrar en factura,
+    # mensaje al pie del recibo, etc. Se edita desde /configuracion (solo dueño).
+    # Ejemplo: {"moneda": "RD$", "nombre_factura": "Colmado Pérez",
+    #           "mensaje_recibo": "¡Gracias por su compra!"}
     configuracion = db.Column(db.JSON, default=dict)
 
     # Relaciones
@@ -56,6 +60,18 @@ class Colmado(db.Model):
     def dueno(self):
         """El usuario con rol 'dueno' dentro de este colmado."""
         return next((u for u in self.usuarios if u.rol == 'dueno'), None)
+
+    def moneda(self):
+        """Símbolo de moneda configurado por el dueño (por defecto RD$)."""
+        return (self.configuracion or {}).get("moneda", "RD$")
+
+    def nombre_para_recibo(self):
+        """Nombre a mostrar en recibos/facturas; si no se configuró uno
+        distinto, usa el nombre del colmado."""
+        return (self.configuracion or {}).get("nombre_factura") or self.nombre
+
+    def mensaje_recibo(self):
+        return (self.configuracion or {}).get("mensaje_recibo", "¡Gracias por su compra!")
 
     def renovar_membresia(self, dias=None):
         """Extiende la fecha de vencimiento. Si no se pasan días, usa la duración del plan asignado."""
@@ -95,7 +111,8 @@ class Usuario(db.Model, UserMixin):
     activo = db.Column(db.Boolean, default=True)
 
     # Permisos delegables que el dueño activa/desactiva individualmente.
-    # Ejemplo: {"productos": true, "reportes": false, "ganancias": false, "caja_completa": true}
+    # Ejemplo: {"productos": true, "reportes": false, "ganancias": false,
+    #           "caja_completa": true, "devoluciones": false}
     # Claves ausentes se consideran False. El dueño ignora esto porque tiene_permiso()
     # le devuelve True para todo automáticamente.
     permisos = db.Column(db.JSON, default=dict)
@@ -113,16 +130,46 @@ class Usuario(db.Model, UserMixin):
 
 
 class Producto(db.Model):
-    """Productos del inventario, cada uno pertenece a un colmado."""
+    """Productos del inventario, cada uno pertenece a un colmado.
+    'cantidad' y 'costo' siempre están expresados en la unidad base del
+    producto (ej. libras, unidades, galones). Si el producto se vende en
+    varias presentaciones (¼ lb, saco, etc.), cada una vive en el modelo
+    Presentacion y se traduce a la unidad base para descontar inventario."""
     id = db.Column(db.Integer, primary_key=True)
     colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=False)
 
     nombre = db.Column(db.String(150), nullable=False)
-    precio = db.Column(db.Float, nullable=False)
-    cantidad = db.Column(db.Integer, nullable=False, default=0)
+    precio = db.Column(db.Float, nullable=False)  # precio de venta por unidad base (se usa si no tiene presentaciones)
+    cantidad = db.Column(db.Integer, nullable=False, default=0)  # existencia en unidad base
+
+    # NUEVO — costo por unidad base, para poder calcular la ganancia real
+    # (precio de venta - costo) en vez de solo mostrar ingresos totales.
+    costo = db.Column(db.Float, nullable=False, default=0.0)
+
+    # NUEVO — etiqueta informativa de la unidad base (ej. "lb", "unidad", "galón")
+    unidad_base = db.Column(db.String(20), nullable=False, default="unidad")
 
     # Para saber qué se vende más, contamos cuántas unidades se han vendido en total
     unidades_vendidas = db.Column(db.Integer, default=0)
+
+
+class Presentacion(db.Model):
+    """NUEVO — Presentaciones de venta de un producto (ej. Arroz por ¼ lb,
+    ½ lb, 1 lb, saco de 100 lb). Cada presentación equivale a una cantidad
+    de la unidad base del producto y tiene su propio precio. Al vender una
+    presentación, se descuenta 'cantidad_base' del inventario del producto."""
+    id = db.Column(db.Integer, primary_key=True)
+    producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=False)
+
+    nombre = db.Column(db.String(50), nullable=False)       # ej. "Libra", "Saco 100lb"
+    cantidad_base = db.Column(db.Float, nullable=False)      # cuánto representa en la unidad base del producto
+    precio = db.Column(db.Float, nullable=False)
+
+    # Si tiene ventas registradas no se elimina físicamente (se desactiva)
+    # para no romper el historial de ventas.
+    activa = db.Column(db.Boolean, default=True)
+
+    producto = db.relationship('Producto', backref=db.backref('presentaciones', lazy=True))
 
 
 class Venta(db.Model):
@@ -146,13 +193,42 @@ class Venta(db.Model):
 
 
 class DetalleVenta(db.Model):
-    """Cada producto dentro de una factura (una factura puede tener varios productos)."""
+    """Cada producto/presentación dentro de una factura. 'cantidad' está en
+    unidades de la presentación vendida (o de la unidad base si el producto
+    no maneja presentaciones)."""
     id = db.Column(db.Integer, primary_key=True)
     venta_id = db.Column(db.Integer, db.ForeignKey('venta.id'), nullable=False)
     producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=False)
 
     cantidad = db.Column(db.Integer, nullable=False)
     precio_unitario = db.Column(db.Float, nullable=False)  # guardamos el precio al momento de vender
+
+    # NUEVO — costo al momento de vender (por la misma unidad que precio_unitario),
+    # para poder calcular ganancia real histórica aunque el costo del producto cambie después.
+    costo_unitario = db.Column(db.Float, nullable=False, default=0.0)
+
+    # NUEVO — si se vendió una presentación específica, se guarda la referencia
+    # y también un "snapshot" del nombre, por si la presentación se borra después.
+    presentacion_id = db.Column(db.Integer, db.ForeignKey('presentacion.id'), nullable=True)
+    presentacion_nombre = db.Column(db.String(50), nullable=True)
+
+
+class Devolucion(db.Model):
+    """NUEVO — Devolución total o parcial de una línea de venta. Repone
+    inventario en la unidad base del producto y, si la venta no era fiada,
+    registra una salida de caja (se le devuelve el dinero al cliente); si
+    era fiada, reduce la deuda pendiente en Fiado."""
+    id = db.Column(db.Integer, primary_key=True)
+    colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=False)
+    venta_id = db.Column(db.Integer, db.ForeignKey('venta.id'), nullable=False)
+    detalle_venta_id = db.Column(db.Integer, db.ForeignKey('detalle_venta.id'), nullable=False)
+    producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
+
+    cantidad = db.Column(db.Integer, nullable=False)  # en la misma unidad que la línea de venta original
+    monto_devuelto = db.Column(db.Float, nullable=False)
+    motivo = db.Column(db.String(200), nullable=False)
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class Fiado(db.Model):
@@ -173,7 +249,7 @@ class Fiado(db.Model):
 class MovimientoCaja(db.Model):
     """Entradas y salidas de dinero de la caja, fuera de las ventas normales.
     Ej: entrada de capital, salida para comprar algo, pago de un gasto, etc.
-    También los abonos de fiado se registran aquí como tipo 'entrada'."""
+    También los abonos de fiado y las devoluciones se registran aquí."""
     id = db.Column(db.Integer, primary_key=True)
     colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=False)
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
@@ -185,10 +261,10 @@ class MovimientoCaja(db.Model):
 
 
 class MovimientoInventario(db.Model):
-    """NUEVO — Módulo de Inventario. Historial de ajustes manuales de
-    existencia (entradas por compra, salidas por daño/pérdida, correcciones
-    de conteo, etc.). No incluye los movimientos automáticos que ya pasan
-    por Venta/DetalleVenta al vender."""
+    """Módulo de Inventario. Historial de ajustes manuales de existencia
+    (entradas por compra, salidas por daño/pérdida, correcciones de conteo,
+    etc.). No incluye los movimientos automáticos que ya pasan por
+    Venta/DetalleVenta al vender, ni las devoluciones (ver Devolucion)."""
     id = db.Column(db.Integer, primary_key=True)
     colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=False)
     producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=False)
@@ -217,7 +293,7 @@ class CuadreCaja(db.Model):
 
 
 class CierreCaja(db.Model):
-    """NUEVO — Fase 1. Cierre formal del día: una sola vez por colmado y por
+    """Fase 1. Cierre formal del día: una sola vez por colmado y por
     fecha (ver UniqueConstraint). Mientras exista un registro aquí para hoy,
     el sistema bloquea nuevas ventas hasta que el dueño lo reabra."""
     __tablename__ = "cierre_caja"

@@ -50,6 +50,8 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "cambia-esto-despues")
 
 db.init_app(app)
+with app.app_context():
+    db.create_all()
 
 # Configuración de Flask-Login
 login_manager = LoginManager()

@@ -184,6 +184,22 @@ class MovimientoCaja(db.Model):
     fecha = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class MovimientoInventario(db.Model):
+    """NUEVO — Módulo de Inventario. Historial de ajustes manuales de
+    existencia (entradas por compra, salidas por daño/pérdida, correcciones
+    de conteo, etc.). No incluye los movimientos automáticos que ya pasan
+    por Venta/DetalleVenta al vender."""
+    id = db.Column(db.Integer, primary_key=True)
+    colmado_id = db.Column(db.Integer, db.ForeignKey('colmado.id'), nullable=False)
+    producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
+
+    tipo = db.Column(db.String(10), nullable=False)  # 'entrada' o 'salida'
+    cantidad = db.Column(db.Integer, nullable=False)  # siempre positivo, el signo lo da 'tipo'
+    motivo = db.Column(db.String(200), nullable=False)
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class CuadreCaja(db.Model):
     """(Histórica, ya no se usa desde la Fase 1 — reemplazada por CierreCaja.
     Se deja aquí sin borrar para no perder datos viejos ni romper la tabla existente.)

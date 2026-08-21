@@ -17,6 +17,7 @@ from models import (
     DetalleVenta,
     Fiado,
     MovimientoCaja,
+    MovimientoInventario,  # <-- NUEVO: módulo de Inventario
     PagoMembresia,
     Pedido,
     Plan,
@@ -476,7 +477,7 @@ def dashboard():
         aviso_membresia = f'<p style="color:var(--gris); font-size:0.85rem;">Membresía activa hasta el {colmado.membresia_vence.strftime("%d/%m/%Y")} ({dias_restantes} días restantes)</p>'
 
   UMBRAL_BAJO_STOCK = 10
-  productos_bajo_stock = (
+  productos_bajo_stock_lista = (
       Producto.query.filter(
           Producto.colmado_id == current_user.colmado_id,
           Producto.cantidad < UMBRAL_BAJO_STOCK,
@@ -486,15 +487,15 @@ def dashboard():
   )
 
   aviso_stock = ""
-  if productos_bajo_stock:
+  if productos_bajo_stock_lista:
     nombres_bajo_stock = ", ".join(
-        f"{p.nombre} ({p.cantidad})" for p in productos_bajo_stock[:5]
+        f"{p.nombre} ({p.cantidad})" for p in productos_bajo_stock_lista[:5]
     )
-    extra = f" y {len(productos_bajo_stock) - 5} más" if len(productos_bajo_stock) > 5 else ""
+    extra = f" y {len(productos_bajo_stock_lista) - 5} más" if len(productos_bajo_stock_lista) > 5 else ""
     aviso_stock = f"""
         <div class="flash flash-danger">
             📉 Poca existencia: {nombres_bajo_stock}{extra}.
-            <a class="btn-link" href="{url_for('productos')}" style="margin-left:6px;">Ver productos →</a>
+            <a class="btn-link" href="{url_for('productos_bajo_stock')}" style="margin-left:6px;">Ver todos →</a>
         </div>
     """
 
@@ -530,10 +531,12 @@ def productos():
     acciones = ""
     if puede_gestionar:
       url_editar = url_for("editar_producto", producto_id=p.id)
+      url_ajustar = url_for("ajustar_inventario", producto_id=p.id)
       url_eliminar = url_for("eliminar_producto", producto_id=p.id)
       confirmacion = f"¿Eliminar {p.nombre}?"
       acciones = (
           f'<a class="btn-link" href="{url_editar}">Editar</a> · '
+          f'<a class="btn-link" href="{url_ajustar}">Ajustar</a> · '
           f'<a class="btn-link" href="{url_eliminar}" '
           f'onclick="return confirm(\'{confirmacion}\')">Eliminar</a>'
       )
@@ -544,10 +547,14 @@ def productos():
 
   filas = "".join(fila_producto(p) for p in lista) or "<tr><td colspan='4'>Aún no tienes productos registrados.</td></tr>"
 
-  boton_agregar = (
-      f'<br><a class="btn" href="{url_for("nuevo_producto")}">+ Agregar Producto</a>'
+  botones_extra = (
+      f'<a class="btn" href="{url_for("nuevo_producto")}">+ Agregar Producto</a>'
       if puede_gestionar
       else ""
+  )
+  botones_extra += (
+      f' <a class="btn" href="{url_for("productos_agotados")}" style="background:var(--gris);">🚫 Agotados</a>'
+      f' <a class="btn" href="{url_for("productos_bajo_stock")}" style="background:var(--gris);">📉 Poca existencia</a>'
   )
 
   cuerpo = f"""
@@ -558,7 +565,7 @@ def productos():
             {filas}
         </table>
             </div>
-        {boton_agregar}
+        <br>{botones_extra}
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
   return render_page("Productos", cuerpo)
@@ -659,6 +666,181 @@ def eliminar_producto(producto_id):
   db.session.commit()
   flash(f"Producto '{producto.nombre}' eliminado.", "success")
   return redirect(url_for("productos"))
+
+
+@app.route("/productos/<int:producto_id>/ajustar", methods=["GET", "POST"])
+@login_required
+@requiere_permiso("productos")
+def ajustar_inventario(producto_id):
+  """NUEVO — Módulo de Inventario. Ajuste manual de existencia: entrada
+  (compra, corrección al alza) o salida (daño, pérdida, corrección a la
+  baja). Queda registrado en MovimientoInventario para poder auditar."""
+  producto = Producto.query.filter_by(
+      id=producto_id, colmado_id=current_user.colmado_id
+  ).first_or_404()
+
+  if request.method == "POST":
+    tipo = request.form.get("tipo")
+    cantidad_str = request.form.get("cantidad", "0")
+    motivo = request.form.get("motivo", "").strip()
+
+    if tipo not in ("entrada", "salida"):
+      flash("Tipo de ajuste no válido.", "danger")
+      return redirect(url_for("ajustar_inventario", producto_id=producto.id))
+
+    try:
+      cantidad = int(cantidad_str)
+    except ValueError:
+      cantidad = 0
+
+    if cantidad <= 0:
+      flash("La cantidad debe ser mayor a cero.", "danger")
+      return redirect(url_for("ajustar_inventario", producto_id=producto.id))
+
+    if not motivo:
+      flash("Debes indicar el motivo del ajuste.", "danger")
+      return redirect(url_for("ajustar_inventario", producto_id=producto.id))
+
+    if tipo == "salida" and cantidad > producto.cantidad:
+      flash(
+          f"No puedes restar {cantidad}, solo hay {producto.cantidad} en existencia.",
+          "danger",
+      )
+      return redirect(url_for("ajustar_inventario", producto_id=producto.id))
+
+    if tipo == "entrada":
+      producto.cantidad += cantidad
+    else:
+      producto.cantidad -= cantidad
+
+    movimiento = MovimientoInventario(
+        colmado_id=current_user.colmado_id,
+        producto_id=producto.id,
+        usuario_id=current_user.id,
+        tipo=tipo,
+        cantidad=cantidad,
+        motivo=motivo,
+    )
+    db.session.add(movimiento)
+    db.session.commit()
+
+    flash(f"Inventario de '{producto.nombre}' ajustado. Nueva existencia: {producto.cantidad}.", "success")
+    return redirect(url_for("productos"))
+
+  historial = (
+      MovimientoInventario.query.filter_by(producto_id=producto.id)
+      .order_by(MovimientoInventario.fecha.desc())
+      .limit(10)
+      .all()
+  )
+
+  def fila_historial(m):
+    usuario_mov = Usuario.query.get(m.usuario_id)
+    signo = "+" if m.tipo == "entrada" else "-"
+    color = "pill-ok" if m.tipo == "entrada" else "pill-pend"
+    return f"""<tr>
+                <td>{m.fecha.strftime('%d/%m/%Y %H:%M')}</td>
+                <td><span class="pill {color}">{signo} {m.cantidad}</span></td>
+                <td>{m.motivo}</td>
+                <td>{usuario_mov.nombre if usuario_mov else '-'}</td>
+            </tr>"""
+
+  filas_historial = "".join(fila_historial(m) for m in historial) or "<tr><td colspan='4'>Sin ajustes registrados.</td></tr>"
+
+  cuerpo = f"""
+        <h2>⚖️ Ajustar Inventario</h2>
+        <p><strong>{producto.nombre}</strong> · Existencia actual: <strong>{producto.cantidad}</strong></p>
+        <form method="POST">
+            <label><input type="radio" name="tipo" value="entrada" checked> ➕ Entrada (compra, corrección al alza)</label>
+            <label><input type="radio" name="tipo" value="salida"> ➖ Salida (daño, pérdida, corrección a la baja)</label>
+            <input type="number" name="cantidad" placeholder="Cantidad" min="1" required>
+            <input type="text" name="motivo" placeholder="Motivo (ej. Compra a suplidor, Producto dañado)" required>
+            <button type="submit">Registrar Ajuste</button>
+        </form>
+
+        <h3>Últimos ajustes de este producto</h3>
+        <div class="tabla-scroll">
+            <table>
+            <tr><th>Fecha</th><th>Cantidad</th><th>Motivo</th><th>Registrado por</th></tr>
+            {filas_historial}
+        </table>
+            </div>
+        <br><a class="btn-link volver" href="{url_for('productos')}">← Volver</a>
+    """
+  return render_page("Ajustar Inventario", cuerpo)
+
+
+@app.route("/productos/agotados")
+@login_required
+def productos_agotados():
+  """NUEVO — Módulo de Inventario. Lista los productos con existencia en 0."""
+  lista = (
+      Producto.query.filter_by(colmado_id=current_user.colmado_id, cantidad=0)
+      .order_by(Producto.nombre.asc())
+      .all()
+  )
+  puede_gestionar = current_user.tiene_permiso("productos")
+
+  def fila(p):
+    accion = (
+        f'<a class="btn-link" href="{url_for("ajustar_inventario", producto_id=p.id)}">Reponer</a>'
+        if puede_gestionar else ""
+    )
+    return f"<tr><td>{p.nombre}</td><td>RD$ {p.precio:.2f}</td><td>{accion}</td></tr>"
+
+  filas = "".join(fila(p) for p in lista) or "<tr><td colspan='3'>🎉 No tienes productos agotados.</td></tr>"
+
+  cuerpo = f"""
+        <h2>🚫 Productos Agotados</h2>
+        <div class="tabla-scroll">
+            <table>
+            <tr><th>Nombre</th><th>Precio</th><th></th></tr>
+            {filas}
+        </table>
+            </div>
+        <br><a class="btn-link volver" href="{url_for('productos')}">← Volver</a>
+    """
+  return render_page("Productos Agotados", cuerpo)
+
+
+@app.route("/productos/bajo-stock")
+@login_required
+def productos_bajo_stock():
+  """NUEVO — Módulo de Inventario. Lista productos con poca existencia
+  (más de 0 pero por debajo del umbral)."""
+  UMBRAL_BAJO_STOCK = 10
+  lista = (
+      Producto.query.filter(
+          Producto.colmado_id == current_user.colmado_id,
+          Producto.cantidad > 0,
+          Producto.cantidad < UMBRAL_BAJO_STOCK,
+      )
+      .order_by(Producto.cantidad.asc())
+      .all()
+  )
+  puede_gestionar = current_user.tiene_permiso("productos")
+
+  def fila(p):
+    accion = (
+        f'<a class="btn-link" href="{url_for("ajustar_inventario", producto_id=p.id)}">Reponer</a>'
+        if puede_gestionar else ""
+    )
+    return f"<tr><td>{p.nombre}</td><td>{p.cantidad}</td><td>{accion}</td></tr>"
+
+  filas = "".join(fila(p) for p in lista) or f"<tr><td colspan='3'>No hay productos por debajo de {UMBRAL_BAJO_STOCK} unidades.</td></tr>"
+
+  cuerpo = f"""
+        <h2>📉 Poca Existencia</h2>
+        <p style="color:var(--gris);">Productos con menos de {UMBRAL_BAJO_STOCK} unidades.</p>
+        <div class="tabla-scroll">
+            <table>
+            <tr><th>Nombre</th><th>Existencia</th><th></th></tr>
+            {filas}
+        </table>
+            </div>
+        <br><a class="btn-link volver" href="{url_for('productos')}">← Volver</a>
+    """
+  return render_page("Poca Existencia", cuerpo)
 
 
 # --- VENTAS / FACTURACIÓN ---
@@ -931,8 +1113,40 @@ def recibo(venta_id):
         </table>
     """
 
-  texto_whatsapp = f"Recibo {colmado.nombre} - Venta #{venta.id} - Total RD$ {venta.total:.2f} - {venta.fecha.strftime('%d/%m/%Y %H:%M')}"
+  # NUEVO: mensaje de WhatsApp con el detalle completo de todos los
+  # productos comprados (no solo el total), para que el cliente vea
+  # exactamente qué llevó, cuánto de cada uno y el subtotal de cada línea.
   import urllib.parse
+
+  lineas_productos_wa = "\n".join(
+      f"• {Producto.query.get(d.producto_id).nombre if Producto.query.get(d.producto_id) else '(producto eliminado)'} "
+      f"x{d.cantidad} — RD$ {d.precio_unitario:.2f} c/u = RD$ {d.cantidad * d.precio_unitario:.2f}"
+      for d in detalles
+  )
+
+  texto_whatsapp = (
+      f"🧾 *Recibo — {colmado.nombre}*\n"
+      f"Venta #{venta.id}\n"
+      f"Fecha: {venta.fecha.strftime('%d/%m/%Y %H:%M')}\n\n"
+      f"*Productos:*\n"
+      f"{lineas_productos_wa}\n\n"
+      f"*Total: RD$ {venta.total:.2f}*"
+  )
+
+  if not venta.es_fiado and venta.efectivo_recibido is not None:
+    texto_whatsapp += (
+        f"\nRecibido: RD$ {venta.efectivo_recibido:.2f}"
+        f"\nCambio devuelto: RD$ {venta.cambio_devuelto:.2f}"
+    )
+
+  if fiado:
+    texto_whatsapp += (
+        f"\n\n⚠️ FIADO A: {fiado.nombre_cliente}"
+        f"{' (' + fiado.telefono_cliente + ')' if fiado.telefono_cliente else ''}"
+    )
+
+  texto_whatsapp += "\n\n¡Gracias por su compra! 🙏"
+
   whatsapp_url = f"https://wa.me/?text={urllib.parse.quote(texto_whatsapp)}"
 
   cuerpo = f"""
@@ -1607,10 +1821,28 @@ def delivery_detalle(pedido_id):
       for u in empleados_activos
   ) or '<option value="">No hay empleados activos</option>'
 
+  # NUEVO: si el pedido viene de una venta registrada, se agrega el
+  # detalle completo de productos también al mensaje de WhatsApp del delivery.
+  venta_asociada = Venta.query.get(pedido.venta_id) if pedido.venta_id else None
+  detalle_productos_wa = ""
+  if venta_asociada:
+    detalles_pedido = DetalleVenta.query.filter_by(venta_id=venta_asociada.id).all()
+    lineas = "\n".join(
+        f"• {Producto.query.get(d.producto_id).nombre if Producto.query.get(d.producto_id) else '(producto eliminado)'} "
+        f"x{d.cantidad} = RD$ {d.cantidad * d.precio_unitario:.2f}"
+        for d in detalles_pedido
+    )
+    detalle_productos_wa = f"\n\n*Tu pedido incluye:*\n{lineas}\n\n*Total: RD$ {venta_asociada.total:.2f}*"
+  elif pedido.nota:
+    detalle_productos_wa = f"\n\nDetalle: {pedido.nota}"
+
   import urllib.parse
   whatsapp_url = ""
   if pedido.telefono_cliente:
-    texto = f"Hola {pedido.nombre_cliente}, tu pedido #{pedido.id} está {pedido.estado.replace('_', ' ')}."
+    texto = (
+        f"Hola {pedido.nombre_cliente}, tu pedido #{pedido.id} está "
+        f"{pedido.estado.replace('_', ' ')}.{detalle_productos_wa}"
+    )
     whatsapp_url = f"https://wa.me/{pedido.telefono_cliente}?text={urllib.parse.quote(texto)}"
 
   botones_estado = ""

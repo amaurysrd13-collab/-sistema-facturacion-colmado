@@ -11,18 +11,19 @@ from flask_login import (
 )
 from sqlalchemy import func
 from models import (
+    AbonoFiado,  # <-- NUEVO: historial de abonos a fiados
     CierreCaja,
     Colmado,
     CuadreCaja,
     DetalleVenta,
-    Devolucion,  # <-- NUEVO: módulo de Devoluciones
+    Devolucion,
     Fiado,
     MovimientoCaja,
     MovimientoInventario,
     PagoMembresia,
     Pedido,
     Plan,
-    Presentacion,  # <-- NUEVO: presentaciones de producto (¼ lb, saco, etc.)
+    Presentacion,
     Producto,
     Usuario,
     Venta,
@@ -114,7 +115,7 @@ def estado_pill(estado):
 
 
 def moneda_colmado():
-  """NUEVO — Devuelve el símbolo de moneda configurado por el dueño del
+  """Devuelve el símbolo de moneda configurado por el dueño del
   colmado actual (ver /configuracion). Si no hay colmado en sesión (ej.
   superadmin) devuelve el símbolo por defecto."""
   if not current_user.is_authenticated or not getattr(current_user, "colmado_id", None):
@@ -159,7 +160,8 @@ ESTILOS = """
     top: 0;
     z-index: 10;
   }
-  .topbar .brand { font-weight: 700; font-size: 1.1rem; text-decoration: none; color: #fff; }
+  .topbar .brand { font-weight: 700; font-size: 1.1rem; text-decoration: none; color: #fff; display:flex; align-items:center; gap:8px; }
+  .topbar .brand img { height: 28px; border-radius: 6px; }
   .topbar .salir {
     color: #fff; text-decoration: none; font-size: 0.9rem; opacity: 0.9;
     padding: 8px 10px; border-radius: 8px;
@@ -167,8 +169,6 @@ ESTILOS = """
   .topbar .salir:active, .topbar .salir:hover { opacity: 1; background: rgba(255,255,255,0.15); }
 
   /* ---------- CONTENEDOR PRINCIPAL ---------- */
-  /* En PC/tablet grande se centra con un ancho cómodo de leer.
-     En celular ocupa el ancho completo con margen chico. */
   .wrap { max-width: 720px; margin: 24px auto; padding: 0 16px; }
   .card {
     background: #fff;
@@ -184,7 +184,6 @@ ESTILOS = """
   h3 { font-size: 1.05rem; }
 
   /* ---------- MENÚ PRINCIPAL (dashboard) ---------- */
-  /* Una columna en celular; se acomoda solo en pantallas más anchas. */
   .menu { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 10px; grid-template-columns: 1fr; }
   .menu li a {
     display: flex;
@@ -199,6 +198,8 @@ ESTILOS = """
     transition: background 0.15s;
   }
   .menu li a:active, .menu li a:hover { background: #d5ecdc; }
+  .grupo-menu { margin-top: 22px; }
+  .grupo-menu h3 { color: var(--gris); text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.04em; margin-bottom: 6px; }
 
   /* ---------- FORMULARIOS ---------- */
   form { display: flex; flex-direction: column; gap: 12px; max-width: 420px; width: 100%; }
@@ -207,7 +208,7 @@ ESTILOS = """
     padding: 12px 12px;
     border: 1px solid var(--borde);
     border-radius: 8px;
-    font-size: 1rem;   /* 16px+ evita que iPhone haga zoom automático al enfocar */
+    font-size: 1rem;
     width: 100%;
     background: #fff;
     color: var(--texto);
@@ -215,7 +216,7 @@ ESTILOS = """
   input:focus, select:focus, textarea:focus { outline: 2px solid var(--verde); border-color: var(--verde); }
   label { font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
 
-  /* ---------- BOTONES (tamaño cómodo para el dedo) ---------- */
+  /* ---------- BOTONES ---------- */
   button, .btn {
     background: var(--verde);
     color: #fff;
@@ -241,8 +242,6 @@ ESTILOS = """
   .btn-link:hover { text-decoration: underline; background: none; }
 
   /* ---------- TABLAS ---------- */
-  /* En celular las tablas anchas se deslizan horizontalmente en vez
-     de romper el diseño o achicar el texto hasta ser ilegible. */
   .tabla-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   table { width: 100%; min-width: 480px; border-collapse: collapse; margin-top: 8px; }
   th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--borde); font-size: 0.9rem; white-space: nowrap; }
@@ -259,6 +258,9 @@ ESTILOS = """
   ul.simple { padding-left: 18px; }
   ul.simple li { margin-bottom: 6px; }
   #buscar-producto { margin-bottom: 8px; }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 14px; }
+  .tabs a { padding: 8px 14px; border-radius: 999px; background: var(--verde-claro); color: var(--verde-oscuro); text-decoration:none; font-weight:600; font-size:0.85rem; }
+  .tabs a.activo { background: var(--verde); color: #fff; }
 
   /* ---------- TABLET (a partir de 640px) ---------- */
   @media (min-width: 640px) {
@@ -289,9 +291,14 @@ def render_page(titulo, cuerpo_html, mostrar_nav=True):
   nav_html = ""
   if mostrar_nav and current_user.is_authenticated:
     inicio = "superadmin_panel" if current_user.rol == "superadmin" else "dashboard"
+    logo_html = ""
+    if current_user.rol != "superadmin" and getattr(current_user, "colmado_id", None):
+      colmado_actual = Colmado.query.get(current_user.colmado_id)
+      if colmado_actual and colmado_actual.logo_url():
+        logo_html = f'<img src="{colmado_actual.logo_url()}" alt="logo">'
     nav_html = f"""
         <div class="topbar">
-            <a class="brand" href="{url_for(inicio)}">🏪 ColmaWeb</a>
+            <a class="brand" href="{url_for(inicio)}">{logo_html}🏪 ColmaWeb</a>
             <a class="salir" href="{url_for('logout')}">Salir</a>
         </div>
         """
@@ -456,29 +463,53 @@ def dashboard():
   if current_user.rol == "superadmin":
     return redirect(url_for("superadmin_panel"))
 
-  opciones_comunes = f"""
-            <li><a href="{url_for('productos')}">📦 Ver Productos</a></li>
-            <li><a href="{url_for('nueva_venta')}">🧾 Nueva Venta</a></li>
-            <li><a href="{url_for('ventas')}">📜 Historial de Ventas</a></li>
-            <li><a href="{url_for('fiados')}">💳 Fiados / Deudas</a></li>
-            <li><a href="{url_for('delivery')}">🛵 Delivery</a></li>
-            <li><a href="{url_for('mi_cuenta')}">👤 Mi Cuenta</a></li>
+  # --- 📊 Principal ---
+  bloque_principal = f"""
+        <li><a href="{url_for('resumen_dia')}">📊 Resumen del Día</a></li>
     """
 
-  # Estas opciones aparecen si el usuario es dueño, O si es cajero/empleado
-  # con el permiso correspondiente activado por el dueño.
-  opciones_delegables = ""
-  if current_user.tiene_permiso("productos"):
-    opciones_delegables += f'<li><a href="{url_for("nuevo_producto")}">➕ Agregar Producto</a></li>'
-  if current_user.tiene_permiso("reportes"):
-    opciones_delegables += f'<li><a href="{url_for("reportes")}">📊 Reportes</a></li>'
-  if current_user.tiene_permiso("caja_completa"):
-    opciones_delegables += f'<li><a href="{url_for("caja")}">💰 Caja</a></li>'
+  # --- 🛒 Ventas ---
+  bloque_ventas = f"""
+            <li><a href="{url_for('nueva_venta')}">🧾 Nueva Venta</a></li>
+            <li><a href="{url_for('ventas')}">📜 Historial de Ventas</a></li>
+    """
+  if current_user.tiene_permiso("devoluciones"):
+    bloque_ventas += f'<li><a href="{url_for("devoluciones_lista")}">↩️ Devoluciones / Anulaciones</a></li>'
+  if current_user.rol == "dueno" or current_user.tiene_permiso("reportes"):
+    bloque_ventas += f'<li><a href="{url_for("ventas_por_empleado")}">👤 Ventas por Empleado</a></li>'
 
-  opciones_dueno = f"""
-            <li><a href="{url_for('empleados')}">👥 Empleados</a></li>
-            <li><a href="{url_for('configuracion')}">⚙️ Configuración</a></li>
-    """ if current_user.rol == "dueno" else ""
+  # --- 📦 Inventario ---
+  bloque_productos = f'<li><a href="{url_for("productos")}">📦 Ver Productos</a></li>'
+  if current_user.tiene_permiso("productos"):
+    bloque_productos += f'<li><a href="{url_for("nuevo_producto")}">➕ Agregar Producto</a></li>'
+  bloque_productos += (
+      f'<li><a href="{url_for("productos_bajo_stock")}">📉 Poca Existencia</a></li>'
+      f'<li><a href="{url_for("productos_agotados")}">🚫 Agotados</a></li>'
+  )
+
+  # --- 💰 Caja ---
+  bloque_caja = ""
+  if current_user.tiene_permiso("caja_completa"):
+    bloque_caja = f'<li><a href="{url_for("caja")}">💰 Caja</a></li>'
+
+  # --- 📒 Fiados ---
+  bloque_fiados = f'<li><a href="{url_for("fiados")}">💳 Fiados / Deudas</a></li>'
+
+  # --- 🛵 Delivery ---
+  bloque_delivery = f'<li><a href="{url_for("delivery")}">🛵 Delivery</a></li>'
+
+  # --- 👨‍💼 Empleados (solo dueño) ---
+  bloque_empleados = f'<li><a href="{url_for("empleados")}">👥 Empleados</a></li>' if current_user.rol == "dueno" else ""
+
+  # --- 📈 Reportes ---
+  bloque_reportes = ""
+  if current_user.tiene_permiso("reportes"):
+    bloque_reportes = f'<li><a href="{url_for("reportes")}">📈 Reportes</a></li>'
+
+  # --- ⚙️ Configuración (solo dueño) ---
+  bloque_config = f'<li><a href="{url_for("configuracion")}">⚙️ Configuración</a></li>' if current_user.rol == "dueno" else ""
+
+  bloque_cuenta = f'<li><a href="{url_for("mi_cuenta")}">👤 Mi Cuenta</a></li>'
 
   aviso_membresia = ""
   if current_user.rol == "dueno":
@@ -520,11 +551,17 @@ def dashboard():
         <p>Rol: <strong>{current_user.rol}</strong></p>
         {aviso_membresia}
         {aviso_stock}
-        <ul class="menu">
-            {opciones_comunes}
-            {opciones_delegables}
-            {opciones_dueno}
-        </ul>
+
+        <div class="grupo-menu"><h3>Principal</h3><ul class="menu">{bloque_principal}</ul></div>
+        <div class="grupo-menu"><h3>Ventas</h3><ul class="menu">{bloque_ventas}</ul></div>
+        <div class="grupo-menu"><h3>Inventario</h3><ul class="menu">{bloque_productos}</ul></div>
+        {f'<div class="grupo-menu"><h3>Caja</h3><ul class="menu">{bloque_caja}</ul></div>' if bloque_caja else ''}
+        <div class="grupo-menu"><h3>Fiados / Deudas</h3><ul class="menu">{bloque_fiados}</ul></div>
+        <div class="grupo-menu"><h3>Delivery</h3><ul class="menu">{bloque_delivery}</ul></div>
+        {f'<div class="grupo-menu"><h3>Empleados</h3><ul class="menu">{bloque_empleados}</ul></div>' if bloque_empleados else ''}
+        {f'<div class="grupo-menu"><h3>Reportes</h3><ul class="menu">{bloque_reportes}</ul></div>' if bloque_reportes else ''}
+        {f'<div class="grupo-menu"><h3>Configuración</h3><ul class="menu">{bloque_config}</ul></div>' if bloque_config else ''}
+        <div class="grupo-menu"><h3>Cuenta</h3><ul class="menu">{bloque_cuenta}</ul></div>
     """
   return render_page("Dashboard", cuerpo)
 
@@ -535,9 +572,63 @@ def logout():
   return redirect(url_for("login"))
 
 
-# --- MI CUENTA (NUEVO) ---
-# Cualquier usuario logueado (dueño, cajero o empleado) puede entrar aquí
-# a cambiar su propia contraseña, sin necesitar al dueño.
+# --- RESUMEN DEL DÍA (NUEVO) ---
+
+
+@app.route("/resumen-dia")
+@login_required
+def resumen_dia():
+  """NUEVO — Vista rápida de 'Principal': cuánto se ha vendido hoy, cuánto
+  hay en caja, cuántos pedidos de delivery están pendientes y cuántos
+  fiados nuevos se abrieron hoy. Todo separado por tipo de venta."""
+  m = moneda_colmado()
+  colmado_id = current_user.colmado_id
+  inicio_hoy = _rango_hoy()
+
+  ventas_hoy = Venta.query.filter(Venta.colmado_id == colmado_id, Venta.fecha >= inicio_hoy).all()
+  ventas_contado = [v for v in ventas_hoy if not v.es_fiado]
+  ventas_fiado = [v for v in ventas_hoy if v.es_fiado]
+
+  total_contado = sum(v.total for v in ventas_contado)
+  total_fiado = sum(v.total for v in ventas_fiado)
+
+  pedidos_pendientes = Pedido.query.filter(
+      Pedido.colmado_id == colmado_id, Pedido.estado != "entregado"
+  ).count()
+
+  puede_ver_ganancias = current_user.tiene_permiso("ganancias")
+  ganancia_hoy_html = ""
+  if puede_ver_ganancias:
+    ganancia_hoy = (
+        db.session.query(
+            func.coalesce(func.sum((DetalleVenta.precio_unitario - DetalleVenta.costo_unitario) * DetalleVenta.cantidad), 0.0)
+        )
+        .join(Venta, DetalleVenta.venta_id == Venta.id)
+        .filter(Venta.colmado_id == colmado_id, Venta.fecha >= inicio_hoy)
+        .scalar()
+    ) or 0.0
+    ganancia_hoy_html = f"<li>Ganancia estimada hoy: <strong>{m} {ganancia_hoy:.2f}</strong></li>"
+
+  caja_html = ""
+  if current_user.tiene_permiso("caja_completa"):
+    esperado_hoy = _efectivo_esperado_hoy(colmado_id)
+    caja_html = f"<li>Efectivo esperado en caja: <strong>{m} {esperado_hoy:.2f}</strong></li>"
+
+  cuerpo = f"""
+        <h2>📊 Resumen del Día</h2>
+        <ul class="simple">
+            <li>Ventas al contado hoy: <strong>{len(ventas_contado)}</strong> · {m} {total_contado:.2f}</li>
+            <li>Ventas fiadas hoy: <strong>{len(ventas_fiado)}</strong> · {m} {total_fiado:.2f}</li>
+            {caja_html}
+            {ganancia_hoy_html}
+            <li>Pedidos de delivery pendientes: <strong>{pedidos_pendientes}</strong></li>
+        </ul>
+        <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
+    """
+  return render_page("Resumen del Día", cuerpo)
+
+
+# --- MI CUENTA ---
 
 
 @app.route("/mi-cuenta", methods=["GET", "POST"])
@@ -567,6 +658,7 @@ def mi_cuenta():
 
   cuerpo = f"""
         <h2>👤 Mi Cuenta</h2>
+        <p>Nombre: <strong>{current_user.nombre}</strong></p>
         <p>Usuario: <strong>{current_user.usuario}</strong> · Rol: <strong>{current_user.rol}</strong></p>
         <h3>Cambiar contraseña</h3>
         <form method="POST">
@@ -580,7 +672,7 @@ def mi_cuenta():
   return render_page("Mi Cuenta", cuerpo)
 
 
-# --- CONFIGURACIÓN DEL COLMADO (NUEVO, solo dueño) ---
+# --- CONFIGURACIÓN DEL COLMADO (solo dueño) ---
 
 
 @app.route("/configuracion", methods=["GET", "POST"])
@@ -594,11 +686,19 @@ def configuracion():
     moneda = request.form.get("moneda", "RD$").strip() or "RD$"
     nombre_factura = request.form.get("nombre_factura", "").strip()
     mensaje_recibo = request.form.get("mensaje_recibo", "").strip() or "¡Gracias por su compra!"
+    logo_url = request.form.get("logo_url", "").strip()
+    metodos_pago_raw = request.form.get("metodos_pago", "Efectivo").strip()
+    whatsapp_numero = request.form.get("whatsapp_numero", "").strip()
+
+    metodos_pago = [m.strip() for m in metodos_pago_raw.split(",") if m.strip()] or ["Efectivo"]
 
     nueva_config = dict(config)
     nueva_config["moneda"] = moneda
     nueva_config["nombre_factura"] = nombre_factura
     nueva_config["mensaje_recibo"] = mensaje_recibo
+    nueva_config["logo_url"] = logo_url
+    nueva_config["metodos_pago"] = metodos_pago
+    nueva_config["whatsapp_numero"] = whatsapp_numero
     colmado.configuracion = nueva_config
     db.session.commit()
     flash("Configuración actualizada correctamente.", "success")
@@ -606,6 +706,8 @@ def configuracion():
 
   cuerpo = f"""
         <h2>⚙️ Configuración del Colmado</h2>
+
+        <h3>Datos del colmado</h3>
         <form method="POST">
             <label>Símbolo de moneda
                 <input type="text" name="moneda" value="{config.get('moneda', 'RD$')}" maxlength="10" placeholder="RD$">
@@ -616,8 +718,21 @@ def configuracion():
             <label>Mensaje al pie del recibo
                 <input type="text" name="mensaje_recibo" value="{config.get('mensaje_recibo', '¡Gracias por su compra!')}">
             </label>
+            <label>URL del logo (imagen pública)
+                <input type="text" name="logo_url" value="{config.get('logo_url', '')}" placeholder="https://...">
+            </label>
+            <label>Métodos de pago aceptados (separados por coma)
+                <input type="text" name="metodos_pago" value="{', '.join(config.get('metodos_pago', ['Efectivo']))}" placeholder="Efectivo, Transferencia, Tarjeta">
+            </label>
+            <label>Número de WhatsApp del negocio (con código de país, sin +)
+                <input type="text" name="whatsapp_numero" value="{config.get('whatsapp_numero', '')}" placeholder="18091234567">
+            </label>
             <button type="submit">Guardar Configuración</button>
         </form>
+
+        <h3>Usuarios</h3>
+        <p><a class="btn-link" href="{url_for('empleados')}">👥 Ver / gestionar empleados</a></p>
+
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
   return render_page("Configuración", cuerpo)
@@ -673,14 +788,24 @@ def productos():
 
   cuerpo = f"""
         <h2>📦 Productos</h2>
+        <input type="text" id="buscar-producto" placeholder="🔍 Buscar producto..." oninput="filtrarTablaProductos()">
         <div class="tabla-scroll">
-            <table>
+            <table id="tabla-productos">
             <tr><th>Nombre</th><th>Precio</th>{encabezado_costo}<th>Existencia</th><th></th></tr>
             {filas}
         </table>
             </div>
         <br>{botones_extra}
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
+        <script>
+            function filtrarTablaProductos() {{
+                const q = document.getElementById('buscar-producto').value.toLowerCase();
+                document.querySelectorAll('#tabla-productos tr').forEach(function(tr, i) {{
+                    if (i === 0) return;
+                    tr.style.display = tr.innerText.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+                }});
+            }}
+        </script>
     """
   return render_page("Productos", cuerpo)
 
@@ -815,9 +940,9 @@ def eliminar_producto(producto_id):
 @login_required
 @requiere_permiso("productos")
 def ajustar_inventario(producto_id):
-  """Módulo de Inventario. Ajuste manual de existencia: entrada
-  (compra, corrección al alza) o salida (daño, pérdida, corrección a la
-  baja). Queda registrado en MovimientoInventario para poder auditar."""
+  """Ajuste manual de existencia: entrada (compra, corrección al alza) o
+  salida (daño, pérdida, corrección a la baja). Queda registrado en
+  MovimientoInventario para poder auditar."""
   producto = Producto.query.filter_by(
       id=producto_id, colmado_id=current_user.colmado_id
   ).first_or_404()
@@ -917,11 +1042,10 @@ def ajustar_inventario(producto_id):
 @login_required
 @requiere_permiso("productos")
 def presentaciones_producto(producto_id):
-  """NUEVO — Módulo de Presentaciones. Permite vender el mismo producto en
-  distintas formas (ej. Arroz: ¼ lb, ½ lb, 1 lb, saco 100lb), cada una con
-  su propio precio. 'cantidad_base' indica cuánto de la unidad base del
-  producto representa esa presentación, para poder descontar el inventario
-  correctamente al vender."""
+  """Permite vender el mismo producto en distintas formas (ej. Arroz: ¼ lb,
+  ½ lb, 1 lb, saco 100lb), cada una con su propio precio. 'cantidad_base'
+  indica cuánto de la unidad base del producto representa esa
+  presentación, para poder descontar el inventario correctamente al vender."""
   m = moneda_colmado()
   producto = Producto.query.filter_by(
       id=producto_id, colmado_id=current_user.colmado_id
@@ -1043,7 +1167,7 @@ def eliminar_presentacion(producto_id, presentacion_id):
 @app.route("/productos/agotados")
 @login_required
 def productos_agotados():
-  """Módulo de Inventario. Lista los productos con existencia en 0."""
+  """Lista los productos con existencia en 0."""
   m = moneda_colmado()
   lista = (
       Producto.query.filter_by(colmado_id=current_user.colmado_id, cantidad=0)
@@ -1077,8 +1201,7 @@ def productos_agotados():
 @app.route("/productos/bajo-stock")
 @login_required
 def productos_bajo_stock():
-  """Módulo de Inventario. Lista productos con poca existencia
-  (más de 0 pero por debajo del umbral)."""
+  """Lista productos con poca existencia (más de 0 pero por debajo del umbral)."""
   UMBRAL_BAJO_STOCK = 10
   lista = (
       Producto.query.filter(
@@ -1142,7 +1265,7 @@ def nueva_venta():
       flash("Debes indicar el efectivo recibido para una venta que no es fiada.", "danger")
       return redirect(url_for("nueva_venta"))
 
-    # NUEVO — cada producto puede venderse por unidad base (si no tiene
+    # Cada producto puede venderse por unidad base (si no tiene
     # presentaciones activas) o por una o varias de sus presentaciones
     # (ej. 2 libras + 1 saco del mismo producto, en la misma venta).
     items = []
@@ -1375,25 +1498,43 @@ def nueva_venta():
 @app.route("/ventas")
 @login_required
 def ventas():
+  """NUEVO — Historial de Ventas separado de los Fiados: por defecto
+  esta pantalla solo muestra ventas al CONTADO (pagadas). Las fiadas
+  viven en su propio módulo (/fiados). Con ?tipo=fiado o ?tipo=todas
+  se puede cambiar la vista."""
   m = moneda_colmado()
-  lista = (
-      Venta.query.filter_by(colmado_id=current_user.colmado_id)
-      .order_by(Venta.fecha.desc())
-      .all()
-  )
+  tipo = request.args.get("tipo", "contado")
+
+  consulta = Venta.query.filter_by(colmado_id=current_user.colmado_id)
+  if tipo == "contado":
+    consulta = consulta.filter(Venta.es_fiado == False)  # noqa: E712
+  elif tipo == "fiado":
+    consulta = consulta.filter(Venta.es_fiado == True)  # noqa: E712
+  # tipo == "todas": sin filtro adicional
+
+  lista = consulta.order_by(Venta.fecha.desc()).all()
+
   filas = "".join(
       f"""<tr>
                 <td>#{v.id}</td>
                 <td>{v.fecha.strftime('%d/%m/%Y %H:%M')}</td>
                 <td>{m} {v.total:.2f}</td>
-                <td><span class="pill {'pill-pend' if v.es_fiado else 'pill-ok'}">{'Fiado' if v.es_fiado else 'Pagada'}</span></td>
+                <td><span class="pill {'pill-pend' if v.es_fiado else 'pill-ok'}">{'Fiado' if v.es_fiado else 'Contado'}</span></td>
                 <td><a class="btn-link" href="{url_for('recibo', venta_id=v.id)}">Ver Recibo</a></td>
             </tr>"""
       for v in lista
-  ) or "<tr><td colspan='5'>Aún no hay ventas registradas.</td></tr>"
+  ) or "<tr><td colspan='5'>No hay ventas registradas con este filtro.</td></tr>"
 
   cuerpo = f"""
         <h2>📜 Historial de Ventas</h2>
+        <div class="tabs">
+            <a class="{'activo' if tipo == 'contado' else ''}" href="{url_for('ventas', tipo='contado')}">Al Contado</a>
+            <a class="{'activo' if tipo == 'fiado' else ''}" href="{url_for('ventas', tipo='fiado')}">Fiadas</a>
+            <a class="{'activo' if tipo == 'todas' else ''}" href="{url_for('ventas', tipo='todas')}">Todas</a>
+        </div>
+        <p style="color:var(--gris); font-size:0.85rem;">
+            Las ventas fiadas también se administran en su propio módulo: <a class="btn-link" href="{url_for('fiados')}">💳 Fiados / Deudas</a>.
+        </p>
         <div class="tabla-scroll">
             <table>
             <tr><th>#</th><th>Fecha</th><th>Total</th><th>Estado</th><th></th></tr>
@@ -1404,6 +1545,50 @@ def ventas():
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
   return render_page("Ventas", cuerpo)
+
+
+@app.route("/ventas/por-empleado")
+@login_required
+def ventas_por_empleado():
+  """NUEVO — Reporte de ventas agrupado por empleado/cajero, separando
+  contado de fiado para que el dueño vea quién vende y cómo."""
+  if not (current_user.rol == "dueno" or current_user.tiene_permiso("reportes")):
+    flash("No tienes permiso para acceder a esa sección.", "danger")
+    return redirect(url_for("dashboard"))
+
+  m = moneda_colmado()
+  usuarios_colmado = Usuario.query.filter_by(colmado_id=current_user.colmado_id).all()
+
+  filas = ""
+  for u in usuarios_colmado:
+    ventas_u = Venta.query.filter_by(colmado_id=current_user.colmado_id, usuario_id=u.id).all()
+    if not ventas_u:
+      continue
+    contado = [v for v in ventas_u if not v.es_fiado]
+    fiado = [v for v in ventas_u if v.es_fiado]
+    total_contado = sum(v.total for v in contado)
+    total_fiado = sum(v.total for v in fiado)
+    filas += f"""<tr>
+                <td>{u.nombre}</td>
+                <td>{len(contado)} · {m} {total_contado:.2f}</td>
+                <td>{len(fiado)} · {m} {total_fiado:.2f}</td>
+                <td>{len(ventas_u)} · {m} {(total_contado + total_fiado):.2f}</td>
+                <td><a class="btn-link" href="{url_for('actividad_empleado', usuario_id=u.id)}">Ver actividad</a></td>
+            </tr>"""
+
+  filas = filas or "<tr><td colspan='5'>Aún no hay ventas registradas.</td></tr>"
+
+  cuerpo = f"""
+        <h2>👤 Ventas por Empleado</h2>
+        <div class="tabla-scroll">
+            <table>
+            <tr><th>Empleado</th><th>Contado (cant · monto)</th><th>Fiado (cant · monto)</th><th>Total</th><th></th></tr>
+            {filas}
+        </table>
+            </div>
+        <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
+    """
+  return render_page("Ventas por Empleado", cuerpo)
 
 
 @app.route("/ventas/<int:venta_id>/recibo")
@@ -1452,8 +1637,6 @@ def recibo(venta_id):
         </table>
     """
 
-  # Mensaje de WhatsApp con el detalle completo de todos los productos
-  # comprados (incluyendo la presentación vendida, si aplica).
   import urllib.parse
 
   lineas_productos_wa = "\n".join(
@@ -1485,7 +1668,9 @@ def recibo(venta_id):
 
   texto_whatsapp += f"\n\n{colmado.mensaje_recibo()} 🙏"
 
-  whatsapp_url = f"https://wa.me/?text={urllib.parse.quote(texto_whatsapp)}"
+  numero_wa = colmado.whatsapp_numero()
+  base_wa = f"https://wa.me/{numero_wa}" if numero_wa else "https://wa.me/"
+  whatsapp_url = f"{base_wa}?text={urllib.parse.quote(texto_whatsapp)}"
 
   boton_devolver = (
       f'<a class="btn" href="{url_for("devolver_venta", venta_id=venta.id)}" style="background:var(--rojo);">↩️ Devolver Producto(s)</a>'
@@ -1528,7 +1713,49 @@ def recibo(venta_id):
   return render_page("Recibo", cuerpo)
 
 
-# --- DEVOLUCIONES (NUEVO) ---
+# --- DEVOLUCIONES / ANULACIONES ---
+
+
+@app.route("/devoluciones")
+@login_required
+@requiere_permiso("devoluciones")
+def devoluciones_lista():
+  """NUEVO — Historial general de devoluciones/anulaciones (antes solo
+  se podía llegar a una devolución desde el recibo de una venta)."""
+  m = moneda_colmado()
+  lista = (
+      Devolucion.query.filter_by(colmado_id=current_user.colmado_id)
+      .order_by(Devolucion.fecha.desc())
+      .limit(100)
+      .all()
+  )
+
+  def fila(d):
+    usuario_d = Usuario.query.get(d.usuario_id)
+    producto = Producto.query.get(d.producto_id)
+    return f"""<tr>
+                <td>{d.fecha.strftime('%d/%m/%Y %H:%M')}</td>
+                <td><a class="btn-link" href="{url_for('recibo', venta_id=d.venta_id)}">Venta #{d.venta_id}</a></td>
+                <td>{producto.nombre if producto else '(producto eliminado)'}</td>
+                <td>{d.cantidad}</td>
+                <td>{m} {d.monto_devuelto:.2f}</td>
+                <td>{d.motivo}</td>
+                <td>{usuario_d.nombre if usuario_d else '-'}</td>
+            </tr>"""
+
+  filas = "".join(fila(d) for d in lista) or "<tr><td colspan='7'>Aún no hay devoluciones registradas.</td></tr>"
+
+  cuerpo = f"""
+        <h2>↩️ Devoluciones / Anulaciones</h2>
+        <div class="tabla-scroll">
+            <table>
+            <tr><th>Fecha</th><th>Venta</th><th>Producto</th><th>Cant.</th><th>Monto</th><th>Motivo</th><th>Registrado por</th></tr>
+            {filas}
+        </table>
+            </div>
+        <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
+    """
+  return render_page("Devoluciones", cuerpo)
 
 
 @app.route("/ventas/<int:venta_id>/devolver", methods=["GET", "POST"])
@@ -1618,6 +1845,7 @@ def devolver_venta(venta_id):
           tipo="salida",
           monto=monto_devuelto,
           motivo=f"Devolución venta #{venta.id} — {motivo}",
+          origen="devolucion",
       )
       db.session.add(movimiento)
 
@@ -1670,18 +1898,24 @@ def devolver_venta(venta_id):
   return render_page("Devolución", cuerpo)
 
 
-# --- FIADOS / DEUDAS ---
+# --- FIADOS / DEUDAS (módulo completamente separado de Ventas) ---
 
 
 @app.route("/fiados")
 @login_required
 def fiados():
   m = moneda_colmado()
-  lista = (
-      Fiado.query.filter_by(colmado_id=current_user.colmado_id)
-      .order_by(Fiado.saldado.asc())
-      .all()
-  )
+  filtro = request.args.get("estado", "pendientes")
+  consulta = Fiado.query.filter_by(colmado_id=current_user.colmado_id)
+  if filtro == "pendientes":
+    consulta = consulta.filter(Fiado.saldado == False)  # noqa: E712
+  elif filtro == "saldados":
+    consulta = consulta.filter(Fiado.saldado == True)  # noqa: E712
+
+  lista = consulta.order_by(Fiado.saldado.asc()).all()
+
+  total_pendiente = sum((f.monto_total - f.monto_pagado) for f in Fiado.query.filter_by(colmado_id=current_user.colmado_id, saldado=False).all())
+
   filas = "".join(
       f"""<tr>
                 <td>{f.nombre_cliente}</td>
@@ -1690,13 +1924,23 @@ def fiados():
                 <td>{m} {f.monto_pagado:.2f}</td>
                 <td>{m} {(f.monto_total - f.monto_pagado):.2f}</td>
                 <td><span class="pill {'pill-ok' if f.saldado else 'pill-pend'}">{'Saldado' if f.saldado else 'Pendiente'}</span></td>
-                <td>{'' if f.saldado else f'<a class="btn-link" href="{url_for("abonar_fiado", fiado_id=f.id)}">Abonar</a>'}</td>
+                <td>
+                    {'' if f.saldado else f'<a class="btn-link" href="{url_for("abonar_fiado", fiado_id=f.id)}">Abonar</a> · '}
+                    <a class="btn-link" href="{url_for('historial_pagos_fiado', fiado_id=f.id)}">Historial</a> ·
+                    <a class="btn-link" href="{url_for('recibo', venta_id=f.venta_id)}">Ver venta</a>
+                </td>
             </tr>"""
       for f in lista
-  ) or "<tr><td colspan='7'>No hay fiados registrados.</td></tr>"
+  ) or "<tr><td colspan='7'>No hay fiados registrados con este filtro.</td></tr>"
 
   cuerpo = f"""
         <h2>💳 Fiados / Deudas</h2>
+        <p style="color:var(--gris);">Saldo pendiente total: <strong>{m} {total_pendiente:.2f}</strong></p>
+        <div class="tabs">
+            <a class="{'activo' if filtro == 'pendientes' else ''}" href="{url_for('fiados', estado='pendientes')}">Pendientes</a>
+            <a class="{'activo' if filtro == 'saldados' else ''}" href="{url_for('fiados', estado='saldados')}">Saldados</a>
+            <a class="{'activo' if filtro == 'todos' else ''}" href="{url_for('fiados', estado='todos')}">Todos</a>
+        </div>
         <div class="tabla-scroll">
             <table>
             <tr>
@@ -1706,6 +1950,9 @@ def fiados():
             {filas}
         </table>
             </div>
+        <p style="color:var(--gris); font-size:0.85rem;">
+            Para crear un fiado nuevo, márcalo como "venta fiada" desde <a class="btn-link" href="{url_for('nueva_venta')}">Nueva Venta</a>.
+        </p>
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
   return render_page("Fiados", cuerpo)
@@ -1727,6 +1974,7 @@ def abonar_fiado(fiado_id):
 
   if request.method == "POST":
     monto_str = request.form.get("monto", "0")
+    nota = request.form.get("nota", "").strip()
     try:
       monto = float(monto_str)
     except ValueError:
@@ -1744,14 +1992,26 @@ def abonar_fiado(fiado_id):
     if fiado.monto_pagado >= fiado.monto_total:
       fiado.saldado = True
 
-    # El abono de fiado también cuenta como entrada de dinero en caja,
-    # para que se refleje en el cuadre del día.
+    # Historial de pagos individual (NUEVO)
+    abono = AbonoFiado(
+        colmado_id=current_user.colmado_id,
+        fiado_id=fiado.id,
+        usuario_id=current_user.id,
+        monto=monto,
+        nota=nota,
+    )
+    db.session.add(abono)
+
+    # El abono también cuenta como entrada de dinero en caja, separado de
+    # las ventas de contado (origen='fiado'), para que se refleje en el
+    # cuadre del día sin mezclarse con la venta original.
     movimiento = MovimientoCaja(
         colmado_id=current_user.colmado_id,
         usuario_id=current_user.id,
         tipo="entrada",
         monto=monto,
         motivo=f"Abono de fiado — {fiado.nombre_cliente}",
+        origen="fiado",
     )
     db.session.add(movimiento)
 
@@ -1764,11 +2024,53 @@ def abonar_fiado(fiado_id):
         <p>Total: {m} {fiado.monto_total:.2f} &nbsp;|&nbsp; Pagado: {m} {fiado.monto_pagado:.2f} &nbsp;|&nbsp; Pendiente: {m} {pendiente:.2f}</p>
         <form method="POST">
             <input type="number" step="0.01" name="monto" placeholder="Monto a abonar" max="{pendiente}" required>
+            <input type="text" name="nota" placeholder="Nota (opcional)">
             <button type="submit">Registrar Abono</button>
         </form>
+        <br><a class="btn-link" href="{url_for('historial_pagos_fiado', fiado_id=fiado.id)}">Ver historial de pagos</a>
         <br><a class="btn-link volver" href="{url_for('fiados')}">← Volver</a>
     """
   return render_page("Abonar", cuerpo)
+
+
+@app.route("/fiados/<int:fiado_id>/historial")
+@login_required
+def historial_pagos_fiado(fiado_id):
+  """NUEVO — Historial de pagos/abonos de un cliente fiado."""
+  m = moneda_colmado()
+  fiado = Fiado.query.filter_by(
+      id=fiado_id, colmado_id=current_user.colmado_id
+  ).first_or_404()
+
+  abonos = (
+      AbonoFiado.query.filter_by(fiado_id=fiado.id)
+      .order_by(AbonoFiado.fecha.desc())
+      .all()
+  )
+
+  def fila(a):
+    usuario_a = Usuario.query.get(a.usuario_id)
+    return f"""<tr>
+                <td>{a.fecha.strftime('%d/%m/%Y %H:%M')}</td>
+                <td>{m} {a.monto:.2f}</td>
+                <td>{a.nota or '-'}</td>
+                <td>{usuario_a.nombre if usuario_a else '-'}</td>
+            </tr>"""
+
+  filas = "".join(fila(a) for a in abonos) or "<tr><td colspan='4'>Aún no hay abonos registrados.</td></tr>"
+
+  cuerpo = f"""
+        <h2>📜 Historial de Pagos — {fiado.nombre_cliente}</h2>
+        <p>Total: {m} {fiado.monto_total:.2f} &nbsp;|&nbsp; Pagado: {m} {fiado.monto_pagado:.2f} &nbsp;|&nbsp; Pendiente: {m} {(fiado.monto_total - fiado.monto_pagado):.2f}</p>
+        <div class="tabla-scroll">
+            <table>
+            <tr><th>Fecha</th><th>Monto</th><th>Nota</th><th>Registrado por</th></tr>
+            {filas}
+        </table>
+            </div>
+        <br><a class="btn-link volver" href="{url_for('fiados')}">← Volver</a>
+    """
+  return render_page("Historial de Pagos", cuerpo)
 
 
 # --- REPORTES ---
@@ -1778,6 +2080,8 @@ def abonar_fiado(fiado_id):
 @login_required
 @requiere_permiso("reportes")
 def reportes():
+  """Hub central de reportes: ventas/ganancias, y accesos a los reportes
+  de inventario, caja, fiados, empleados y delivery."""
   m = moneda_colmado()
   colmado_id = current_user.colmado_id
   hoy = datetime.utcnow().date()
@@ -1785,17 +2089,17 @@ def reportes():
   inicio_semana = inicio_hoy - timedelta(days=inicio_hoy.weekday())
   inicio_mes = datetime(hoy.year, hoy.month, 1)
 
-  def total_desde(fecha_inicio):
-    resultado = (
-        db.session.query(func.coalesce(func.sum(Venta.total), 0.0))
-        .filter(Venta.colmado_id == colmado_id, Venta.fecha >= fecha_inicio)
-        .scalar()
+  def total_desde(fecha_inicio, solo_contado=False):
+    consulta = db.session.query(func.coalesce(func.sum(Venta.total), 0.0)).filter(
+        Venta.colmado_id == colmado_id, Venta.fecha >= fecha_inicio
     )
-    return resultado or 0.0
+    if solo_contado:
+      consulta = consulta.filter(Venta.es_fiado == False)  # noqa: E712
+    return consulta.scalar() or 0.0
 
   def ganancia_desde(fecha_inicio):
-    """NUEVO — Ganancia real: (precio de venta - costo) por cada línea
-    vendida, usando el costo guardado en DetalleVenta al momento de vender."""
+    """Ganancia real: (precio de venta - costo) por cada línea vendida,
+    usando el costo guardado en DetalleVenta al momento de vender."""
     resultado = (
         db.session.query(
             func.coalesce(
@@ -1828,25 +2132,10 @@ def reportes():
       for p in mas_vendidos
   ) or "<tr><td colspan='2'>Aún no hay ventas</td></tr>"
 
-  UMBRAL_BAJO_STOCK = 10
-  bajo_stock = (
-      Producto.query.filter(
-          Producto.colmado_id == colmado_id,
-          Producto.cantidad < UMBRAL_BAJO_STOCK,
-      )
-      .order_by(Producto.cantidad.asc())
-      .all()
-  )
-  filas_bajo_stock = "".join(
-      f"<tr><td>{p.nombre}</td><td>{p.cantidad} {p.unidad_base}</td></tr>" for p in bajo_stock
-  ) or "<tr><td colspan='2'>Sin productos en bajo stock</td></tr>"
-
-  # Las ventas/ganancias en dinero solo se muestran si el usuario tiene
-  # el permiso "ganancias" (el dueño siempre lo tiene).
   seccion_ganancias = ""
   if current_user.tiene_permiso("ganancias"):
     seccion_ganancias = f"""
-        <h3>Ventas (ingresos)</h3>
+        <h3>Ventas (ingresos, contado + fiado)</h3>
         <ul class="simple">
             <li>Hoy: <strong>{m} {total_hoy:.2f}</strong></li>
             <li>Esta semana: <strong>{m} {total_semana:.2f}</strong></li>
@@ -1865,7 +2154,7 @@ def reportes():
     """
 
   cuerpo = f"""
-        <h2>📊 Reportes</h2>
+        <h2>📈 Reportes</h2>
 
         {seccion_ganancias}
 
@@ -1877,17 +2166,150 @@ def reportes():
         </table>
             </div>
 
-        <h3>Bajo stock (menos de {UMBRAL_BAJO_STOCK} unidades)</h3>
-        <div class="tabla-scroll">
-            <table>
-            <tr><th>Producto</th><th>Cantidad</th></tr>
-            {filas_bajo_stock}
-        </table>
-            </div>
+        <div class="grupo-menu">
+            <h3>Otros reportes</h3>
+            <ul class="menu">
+                <li><a href="{url_for('reporte_inventario')}">📦 Inventario</a></li>
+                <li><a href="{url_for('reporte_caja')}">💰 Caja</a></li>
+                <li><a href="{url_for('reporte_fiados')}">💳 Fiados</a></li>
+                <li><a href="{url_for('ventas_por_empleado')}">👤 Empleados</a></li>
+                <li><a href="{url_for('reporte_delivery')}">🛵 Delivery</a></li>
+            </ul>
+        </div>
 
         <br><a class="btn-link volver" href="{url_for('dashboard')}">← Volver</a>
     """
   return render_page("Reportes", cuerpo)
+
+
+@app.route("/reportes/inventario")
+@login_required
+@requiere_permiso("reportes")
+def reporte_inventario():
+  """NUEVO — Reporte de inventario: total de productos, existencia total
+  y valor del inventario (a precio de venta y a costo)."""
+  m = moneda_colmado()
+  productos_colmado = Producto.query.filter_by(colmado_id=current_user.colmado_id).all()
+
+  total_productos = len(productos_colmado)
+  valor_venta = sum(p.precio * p.cantidad for p in productos_colmado)
+  valor_costo = sum(p.costo * p.cantidad for p in productos_colmado)
+  agotados = len([p for p in productos_colmado if p.cantidad == 0])
+  bajo_stock = len([p for p in productos_colmado if 0 < p.cantidad < 10])
+
+  puede_ver_costo = current_user.tiene_permiso("ganancias")
+  linea_costo = f"<li>Valor del inventario a costo: <strong>{m} {valor_costo:.2f}</strong></li>" if puede_ver_costo else ""
+
+  cuerpo = f"""
+        <h2>📦 Reporte de Inventario</h2>
+        <ul class="simple">
+            <li>Productos registrados: <strong>{total_productos}</strong></li>
+            <li>Valor del inventario a precio de venta: <strong>{m} {valor_venta:.2f}</strong></li>
+            {linea_costo}
+            <li>Productos agotados: <strong>{agotados}</strong></li>
+            <li>Productos con poca existencia: <strong>{bajo_stock}</strong></li>
+        </ul>
+        <br><a class="btn-link" href="{url_for('productos_bajo_stock')}">📉 Ver poca existencia</a>
+        <br><a class="btn-link" href="{url_for('productos_agotados')}">🚫 Ver agotados</a>
+        <br><a class="btn-link volver" href="{url_for('reportes')}">← Volver a Reportes</a>
+    """
+  return render_page("Reporte de Inventario", cuerpo)
+
+
+@app.route("/reportes/caja")
+@login_required
+@requiere_permiso("reportes")
+def reporte_caja():
+  """NUEVO — Reporte de caja: últimos cierres y diferencias, separado de
+  reportes de ventas."""
+  m = moneda_colmado()
+  cierres = (
+      CierreCaja.query.filter_by(colmado_id=current_user.colmado_id)
+      .order_by(CierreCaja.fecha.desc())
+      .limit(15)
+      .all()
+  )
+
+  cuadrados = len([c for c in cierres if abs(c.diferencia) < 0.01])
+  con_diferencia = len(cierres) - cuadrados
+
+  filas = "".join(
+      f"""<tr>
+                <td>{c.fecha.strftime('%d/%m/%Y')}</td>
+                <td>{m} {c.efectivo_esperado:.2f}</td>
+                <td>{m} {c.efectivo_contado:.2f}</td>
+                <td>{m} {c.diferencia:.2f}</td>
+            </tr>"""
+      for c in cierres
+  ) or "<tr><td colspan='4'>Sin cierres registrados.</td></tr>"
+
+  cuerpo = f"""
+        <h2>💰 Reporte de Caja</h2>
+        <ul class="simple">
+            <li>Cierres cuadrados (últimos {len(cierres)}): <strong>{cuadrados}</strong></li>
+            <li>Cierres con diferencia: <strong>{con_diferencia}</strong></li>
+        </ul>
+        <div class="tabla-scroll">
+            <table>
+            <tr><th>Fecha</th><th>Esperado</th><th>Contado</th><th>Diferencia</th></tr>
+            {filas}
+        </table>
+            </div>
+        <br><a class="btn-link" href="{url_for('caja_diferencias')}">Ver historial completo</a>
+        <br><a class="btn-link volver" href="{url_for('reportes')}">← Volver a Reportes</a>
+    """
+  return render_page("Reporte de Caja", cuerpo)
+
+
+@app.route("/reportes/fiados")
+@login_required
+@requiere_permiso("reportes")
+def reporte_fiados():
+  """NUEVO — Reporte de fiados: totales generales, separado del historial de ventas."""
+  m = moneda_colmado()
+  todos = Fiado.query.filter_by(colmado_id=current_user.colmado_id).all()
+  pendientes = [f for f in todos if not f.saldado]
+  total_prestado = sum(f.monto_total for f in todos)
+  total_pendiente = sum((f.monto_total - f.monto_pagado) for f in pendientes)
+  total_cobrado = sum(f.monto_pagado for f in todos)
+
+  cuerpo = f"""
+        <h2>💳 Reporte de Fiados</h2>
+        <ul class="simple">
+            <li>Clientes con fiado (histórico): <strong>{len(todos)}</strong></li>
+            <li>Clientes con deuda pendiente: <strong>{len(pendientes)}</strong></li>
+            <li>Total fiado (histórico): <strong>{m} {total_prestado:.2f}</strong></li>
+            <li>Total cobrado (abonos): <strong>{m} {total_cobrado:.2f}</strong></li>
+            <li>Total pendiente por cobrar: <strong>{m} {total_pendiente:.2f}</strong></li>
+        </ul>
+        <br><a class="btn-link" href="{url_for('fiados')}">Ver lista de fiados</a>
+        <br><a class="btn-link volver" href="{url_for('reportes')}">← Volver a Reportes</a>
+    """
+  return render_page("Reporte de Fiados", cuerpo)
+
+
+@app.route("/reportes/delivery")
+@login_required
+@requiere_permiso("reportes")
+def reporte_delivery():
+  """NUEVO — Reporte de delivery: pedidos por estado."""
+  colmado_id = current_user.colmado_id
+  pendientes = Pedido.query.filter_by(colmado_id=colmado_id, estado="pendiente").count()
+  en_camino = Pedido.query.filter_by(colmado_id=colmado_id, estado="en_camino").count()
+  entregados = Pedido.query.filter_by(colmado_id=colmado_id, estado="entregado").count()
+
+  cuerpo = f"""
+        <h2>🛵 Reporte de Delivery</h2>
+        <ul class="simple">
+            <li>Pendientes: <strong>{pendientes}</strong></li>
+            <li>En camino: <strong>{en_camino}</strong></li>
+            <li>Entregados (histórico): <strong>{entregados}</strong></li>
+        </ul>
+        <br><a class="btn-link" href="{url_for('delivery')}">Ver pedidos activos</a>
+        <br><a class="btn-link" href="{url_for('delivery_historial')}">Ver historial de entregas</a>
+        <br><a class="btn-link volver" href="{url_for('reportes')}">← Volver a Reportes</a>
+    """
+  return render_page("Reporte de Delivery", cuerpo)
 
 
 # --- CAJA ---
@@ -1905,9 +2327,10 @@ def _dia_cerrado(colmado_id):
 
 
 def _efectivo_esperado_hoy(colmado_id):
-  """Ventas no fiadas de hoy (se asumen en efectivo) + entradas - salidas de hoy.
-  Nota: los abonos de fiado y las salidas por devolución ya entran aquí
-  porque se registran como MovimientoCaja (ver abonar_fiado y devolver_venta)."""
+  """Ventas al CONTADO de hoy (las fiadas no cuentan porque el dinero aún
+  no ha entrado) + entradas - salidas de hoy. Los abonos de fiado y las
+  salidas por devolución ya entran aquí porque se registran como
+  MovimientoCaja (ver abonar_fiado y devolver_venta)."""
   inicio_hoy = _rango_hoy()
 
   total_ventas_efectivo = (
@@ -1962,7 +2385,7 @@ def caja():
   cuerpo = f"""
         <h2>💰 Caja</h2>
         {aviso_cierre}
-        <p style="color:var(--gris);">Efectivo esperado hoy (ventas efectivo + abonos fiado − salidas y devoluciones): <strong>{m} {esperado_hoy:.2f}</strong></p>
+        <p style="color:var(--gris);">Efectivo esperado hoy (ventas al contado + abonos fiado − salidas y devoluciones): <strong>{m} {esperado_hoy:.2f}</strong></p>
         <ul class="menu">
             <li><a href="{url_for('caja_entrada')}">➕ Entrada de Dinero</a></li>
             <li><a href="{url_for('caja_salida')}">➖ Salida de Dinero</a></li>
@@ -1979,6 +2402,7 @@ def caja():
 @login_required
 @requiere_permiso("caja_completa")
 def caja_entrada():
+  """Entrada manual de dinero a caja (ej. aporte de capital)."""
   m = moneda_colmado()
   if request.method == "POST":
     monto = request.form.get("monto")
@@ -2004,6 +2428,7 @@ def caja_entrada():
         tipo="entrada",
         monto=monto,
         motivo=motivo,
+        origen="manual",
     )
     db.session.add(movimiento)
     db.session.commit()
@@ -2051,6 +2476,7 @@ def caja_salida():
         tipo="salida",
         monto=monto,
         motivo=motivo,
+        origen="manual",
     )
     db.session.add(movimiento)
     db.session.commit()
@@ -2084,24 +2510,28 @@ def caja_movimientos():
       .all()
   )
 
+  etiqueta_origen = {"manual": "Manual", "fiado": "Abono Fiado", "devolucion": "Devolución"}
+
   def fila(mov):
     usuario_mov = Usuario.query.get(mov.usuario_id)
     signo = "+" if mov.tipo == "entrada" else "-"
     color = "pill-ok" if mov.tipo == "entrada" else "pill-pend"
+    origen_txt = etiqueta_origen.get(mov.origen, mov.origen)
     return f"""<tr>
                 <td>{mov.fecha.strftime('%H:%M')}</td>
                 <td><span class="pill {color}">{signo} {m} {mov.monto:.2f}</span></td>
+                <td><span class="pill pill-pend">{origen_txt}</span></td>
                 <td>{mov.motivo}</td>
                 <td>{usuario_mov.nombre if usuario_mov else '-'}</td>
             </tr>"""
 
-  filas = "".join(fila(mov) for mov in lista) or "<tr><td colspan='4'>Sin movimientos hoy.</td></tr>"
+  filas = "".join(fila(mov) for mov in lista) or "<tr><td colspan='5'>Sin movimientos hoy.</td></tr>"
 
   cuerpo = f"""
         <h2>📜 Movimientos de Hoy</h2>
         <div class="tabla-scroll">
             <table>
-            <tr><th>Hora</th><th>Monto</th><th>Motivo</th><th>Registrado por</th></tr>
+            <tr><th>Hora</th><th>Monto</th><th>Origen</th><th>Motivo</th><th>Registrado por</th></tr>
             {filas}
         </table>
             </div>
@@ -2227,9 +2657,6 @@ def caja_diferencias():
 
 
 # --- DELIVERY ---
-# Todos los usuarios (dueño, cajero, empleado) pueden usar este módulo:
-# el dueño y cajero para crear/asignar pedidos, y cualquier empleado para
-# ver y actualizar los pedidos que tiene asignados.
 
 
 def _pill_estado_pedido(estado):
@@ -2343,8 +2770,6 @@ def delivery_detalle(pedido_id):
       for u in empleados_activos
   ) or '<option value="">No hay empleados activos</option>'
 
-  # Si el pedido viene de una venta registrada, se agrega el detalle
-  # completo de productos (incluyendo presentación) también al WhatsApp.
   venta_asociada = Venta.query.get(pedido.venta_id) if pedido.venta_id else None
   detalle_productos_wa = ""
   if venta_asociada:
@@ -2473,7 +2898,7 @@ def delivery_historial():
   return render_page("Historial de Delivery", cuerpo)
 
 
-# --- EMPLEADOS (solo dueño: alta/baja/permisos NUNCA se delegan) ---
+# --- EMPLEADOS (alta/baja/permisos solo dueño; nunca se delegan) ---
 
 
 @app.route("/empleados")
@@ -2488,8 +2913,10 @@ def empleados():
                 <td><span class="pill {'pill-ok' if u.rol == 'dueno' else 'pill-pend'}">{u.rol}</span></td>
                 <td><span class="pill {'pill-ok' if u.activo else 'pill-pend'}">{'Activo' if u.activo else 'Inactivo'}</span></td>
                 <td>
+                    {'' if u.rol == 'dueno' else f'<a class="btn-link" href="{url_for("editar_empleado", usuario_id=u.id)}">Editar</a> · '}
                     {'' if u.rol == 'dueno' else f'<a class="btn-link" href="{url_for("permisos_empleado", usuario_id=u.id)}">Permisos</a> · '}
-                    {'' if u.id == current_user.id else f'<a class="btn-link" href="{url_for("alternar_empleado", usuario_id=u.id)}">{"Desactivar" if u.activo else "Activar"}</a>'}
+                    <a class="btn-link" href="{url_for('actividad_empleado', usuario_id=u.id)}">Actividad</a>
+                    {'' if u.id == current_user.id else f' · <a class="btn-link" href="{url_for("alternar_empleado", usuario_id=u.id)}">{"Desactivar" if u.activo else "Activar"}</a>'}
                 </td>
             </tr>"""
       for u in lista
@@ -2553,6 +2980,61 @@ def nuevo_empleado():
         <br><a class="btn-link volver" href="{url_for('empleados')}">← Volver</a>
     """
   return render_page("Nuevo Empleado", cuerpo)
+
+
+@app.route("/empleados/<int:usuario_id>/editar", methods=["GET", "POST"])
+@login_required
+@solo_dueno
+def editar_empleado(usuario_id):
+  """NUEVO — Editar datos básicos (nombre, usuario, rol y opcionalmente
+  la contraseña) de un cajero/empleado. Agregar/eliminar sigue siendo
+  exclusivo del dueño, esto solo permite corregir datos existentes."""
+  usuario_obj = Usuario.query.filter_by(
+      id=usuario_id, colmado_id=current_user.colmado_id
+  ).first_or_404()
+
+  if usuario_obj.rol == "dueno":
+    flash("No puedes editar la cuenta del dueño desde aquí.", "danger")
+    return redirect(url_for("empleados"))
+
+  if request.method == "POST":
+    nombre = request.form.get("nombre", "").strip()
+    usuario_login = request.form.get("usuario", "").strip()
+    rol = request.form.get("rol")
+    nueva_clave = request.form.get("nueva_clave", "").strip()
+
+    if not nombre or not usuario_login or rol not in ("cajero", "empleado"):
+      flash("Todos los campos son obligatorios.", "danger")
+      return redirect(url_for("editar_empleado", usuario_id=usuario_obj.id))
+
+    existente = Usuario.query.filter(Usuario.usuario == usuario_login, Usuario.id != usuario_obj.id).first()
+    if existente:
+      flash("Ese usuario ya existe, elige otro.", "danger")
+      return redirect(url_for("editar_empleado", usuario_id=usuario_obj.id))
+
+    usuario_obj.nombre = nombre
+    usuario_obj.usuario = usuario_login
+    usuario_obj.rol = rol
+    if nueva_clave:
+      usuario_obj.clave_hash = generate_password_hash(nueva_clave)
+
+    db.session.commit()
+    flash("Empleado actualizado correctamente.", "success")
+    return redirect(url_for("empleados"))
+
+  cuerpo = f"""
+        <h2>✏️ Editar Empleado</h2>
+        <form method="POST">
+            <input type="text" name="nombre" placeholder="Nombre completo" value="{usuario_obj.nombre}" required>
+            <input type="text" name="usuario" placeholder="Usuario para iniciar sesión" value="{usuario_obj.usuario}" required>
+            <label><input type="radio" name="rol" value="cajero" {"checked" if usuario_obj.rol == "cajero" else ""}> Cajero</label>
+            <label><input type="radio" name="rol" value="empleado" {"checked" if usuario_obj.rol == "empleado" else ""}> Empleado básico</label>
+            <input type="password" name="nueva_clave" placeholder="Nueva contraseña (dejar vacío para no cambiarla)">
+            <button type="submit">Guardar Cambios</button>
+        </form>
+        <br><a class="btn-link volver" href="{url_for('empleados')}">← Volver</a>
+    """
+  return render_page("Editar Empleado", cuerpo)
 
 
 @app.route("/empleados/<int:usuario_id>/alternar")
@@ -2619,8 +3101,97 @@ def permisos_empleado(usuario_id):
   return render_page("Permisos", cuerpo)
 
 
+@app.route("/empleados/<int:usuario_id>/actividad")
+@login_required
+def actividad_empleado(usuario_id):
+  """NUEVO — Actividad del empleado: últimas ventas, ajustes de
+  inventario, movimientos de caja y devoluciones que ha registrado.
+  El dueño puede ver a cualquiera; un empleado solo puede ver su propia
+  actividad."""
+  if current_user.rol != "dueno" and current_user.id != usuario_id:
+    flash("No puedes ver la actividad de otro empleado.", "danger")
+    return redirect(url_for("dashboard"))
+
+  usuario_obj = Usuario.query.filter_by(
+      id=usuario_id, colmado_id=current_user.colmado_id
+  ).first_or_404()
+  m = moneda_colmado()
+
+  ventas_u = (
+      Venta.query.filter_by(colmado_id=current_user.colmado_id, usuario_id=usuario_obj.id)
+      .order_by(Venta.fecha.desc())
+      .limit(15)
+      .all()
+  )
+  filas_ventas = "".join(
+      f"<tr><td>{v.fecha.strftime('%d/%m/%Y %H:%M')}</td><td>{m} {v.total:.2f}</td>"
+      f"<td><span class='pill {'pill-pend' if v.es_fiado else 'pill-ok'}'>{'Fiado' if v.es_fiado else 'Contado'}</span></td>"
+      f"<td><a class='btn-link' href='{url_for('recibo', venta_id=v.id)}'>Ver</a></td></tr>"
+      for v in ventas_u
+  ) or "<tr><td colspan='4'>Sin ventas registradas.</td></tr>"
+
+  ajustes_u = (
+      MovimientoInventario.query.filter_by(colmado_id=current_user.colmado_id, usuario_id=usuario_obj.id)
+      .order_by(MovimientoInventario.fecha.desc())
+      .limit(10)
+      .all()
+  )
+  filas_ajustes = "".join(
+      f"<tr><td>{a.fecha.strftime('%d/%m/%Y %H:%M')}</td><td>{a.tipo}</td><td>{a.cantidad}</td><td>{a.motivo}</td></tr>"
+      for a in ajustes_u
+  ) or "<tr><td colspan='4'>Sin ajustes de inventario.</td></tr>"
+
+  movimientos_u = (
+      MovimientoCaja.query.filter_by(colmado_id=current_user.colmado_id, usuario_id=usuario_obj.id)
+      .order_by(MovimientoCaja.fecha.desc())
+      .limit(10)
+      .all()
+  )
+  filas_movimientos = "".join(
+      f"<tr><td>{mv.fecha.strftime('%d/%m/%Y %H:%M')}</td><td>{mv.tipo}</td><td>{m} {mv.monto:.2f}</td><td>{mv.motivo}</td></tr>"
+      for mv in movimientos_u
+  ) or "<tr><td colspan='4'>Sin movimientos de caja.</td></tr>"
+
+  devoluciones_u = (
+      Devolucion.query.filter_by(colmado_id=current_user.colmado_id, usuario_id=usuario_obj.id)
+      .order_by(Devolucion.fecha.desc())
+      .limit(10)
+      .all()
+  )
+  filas_devoluciones = "".join(
+      f"<tr><td>{d.fecha.strftime('%d/%m/%Y %H:%M')}</td><td>Venta #{d.venta_id}</td><td>{m} {d.monto_devuelto:.2f}</td><td>{d.motivo}</td></tr>"
+      for d in devoluciones_u
+  ) or "<tr><td colspan='4'>Sin devoluciones registradas.</td></tr>"
+
+  cuerpo = f"""
+        <h2>📋 Actividad de {usuario_obj.nombre}</h2>
+
+        <h3>Últimas ventas</h3>
+        <div class="tabla-scroll"><table>
+            <tr><th>Fecha</th><th>Total</th><th>Tipo</th><th></th></tr>{filas_ventas}
+        </table></div>
+
+        <h3>Ajustes de inventario</h3>
+        <div class="tabla-scroll"><table>
+            <tr><th>Fecha</th><th>Tipo</th><th>Cantidad</th><th>Motivo</th></tr>{filas_ajustes}
+        </table></div>
+
+        <h3>Movimientos de caja</h3>
+        <div class="tabla-scroll"><table>
+            <tr><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Motivo</th></tr>{filas_movimientos}
+        </table></div>
+
+        <h3>Devoluciones registradas</h3>
+        <div class="tabla-scroll"><table>
+            <tr><th>Fecha</th><th>Venta</th><th>Monto</th><th>Motivo</th></tr>{filas_devoluciones}
+        </table></div>
+
+        <br><a class="btn-link volver" href="{url_for('empleados') if current_user.rol == 'dueno' else url_for('dashboard')}">← Volver</a>
+    """
+  return render_page(f"Actividad de {usuario_obj.nombre}", cuerpo)
+
+
 # --- SUPER-ADMIN (tú, el creador del sistema) ---
-# Entra por el mismo /login de siempre, con un usuario que tenga rol='superadmin'.
 
 
 @app.route("/superadmin/panel")

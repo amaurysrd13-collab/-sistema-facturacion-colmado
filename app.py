@@ -50,8 +50,6 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "cambia-esto-despues")
 
 db.init_app(app)
-with app.app_context():
-    db.create_all()
 
 # Configuración de Flask-Login
 login_manager = LoginManager()
@@ -330,41 +328,9 @@ def index():
 
 @app.route("/registro-inicial", methods=["GET", "POST"])
 def registro_inicial():
-    if Colmado.query.first():
-        return redirect(url_for("login"))
+  if Colmado.query.first():
+    return redirect(url_for("login"))
 
-    if request.method == "POST":
-        nombre_colmado = request.form.get("nombre_colmado")
-        nombre_dueno = request.form.get("nombre_dueno")
-        usuario_login = request.form.get("usuario")
-        password_login = request.form.get("clave")
-
-        # 1. Crear el colmado asignando la fecha de membresía
-        nuevo_colmado = Colmado(
-            nombre=nombre_colmado,
-            membresia_vence=datetime.utcnow() + timedelta(days=30),
-            membresia_activa=True,
-            estado="activo"
-        )
-        db.session.add(nuevo_colmado)
-        db.session.flush()
-
-        # 2. Crear el dueño usando la propiedad clave_hash
-        nuevo_dueno = Usuario(
-            colmado_id=nuevo_colmado.id,
-            nombre=nombre_dueno,
-            usuario=usuario_login,
-            clave_hash=generate_password_hash(password_login),
-            rol="dueno",
-            activo=True
-        )
-        db.session.add(nuevo_dueno)
-        db.session.commit()
-
-        flash("¡Colmado y usuario creados exitosamente! Ya puedes iniciar sesión.", "success")
-        return redirect(url_for("login"))
-
-    return render_template("registro_inicial.html")
   if request.method == "POST":
     nombre_colmado = request.form.get("nombre_colmado")
     nombre_dueno = request.form.get("nombre_dueno")
